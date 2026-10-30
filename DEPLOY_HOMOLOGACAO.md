@@ -68,3 +68,8 @@ O `check --deploy` local não representa o ambiente Coolify e pode produzir avis
 
 Mesmo cumprindo este checklist, trata-se de homologação controlada; isso não autoriza uso com dados reais de folha nem equivale a auditoria de segurança ou prontidão de produção.
 Configure os valores no painel de variáveis/segredos do serviço como **disponíveis em runtime**, não como Build Variables/build args. As credenciais do Supabase e as chaves Django não são necessárias para `collectstatic` e não devem ser passadas ao construtor.
+
+
+## Páginas de erro para usuários
+
+A aplicação usa respostas próprias para erros 400, 403, 404 e 500, e uma página genérica para rejeições CSRF. Elas não mostram exceções, traceback, caminhos internos ou o motivo técnico da falha. O contêiner assume `DJANGO_DEBUG=0` por padrão; mantenha esse valor também nas variáveis runtime do Coolify. Em homologação, valide que URL inexistente retorna a página 404 da marca e que POST sem token CSRF retorna uma mensagem genérica, sem ativar `DEBUG` para diagnóstico.

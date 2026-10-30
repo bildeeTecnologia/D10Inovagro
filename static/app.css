@@ -39,3 +39,9 @@
 @media(max-width:1000px){.report-visual-grid{grid-template-columns:1fr}.report-chart-card-wide{grid-column:auto}.report-insights{grid-template-columns:1fr 1fr}}
 @media(max-width:800px){.report-warning-inline{margin-left:16px;margin-right:16px}.report-metrics-visual{padding:0 16px 20px}}
 @media(max-width:650px){.report-metrics-visual{grid-template-columns:1fr}.report-visual-grid{padding:0 16px;gap:14px}.report-chart-card{padding:17px}.horizontal-bars-events{grid-template-columns:1fr}.report-insights{grid-template-columns:1fr;margin-left:16px;margin-right:16px}.trend-svg{min-height:170px}.trend-axis-label{font-size:11px}.trend-month-label{font-size:10px}}
+
+/* Evita o zoom automático do Safari iOS ao focar campos com fonte menor que 16px. */
+@media(max-width:650px){.field-app .field-form input,.field-app .field-form select,.field-app .field-form textarea{font-size:16px}}
+
+/* Mantém campos em 16px também em tablets/dispositivos de toque com viewport mais largo. */
+@media(pointer:coarse){.field-app .field-form input,.field-app .field-form select,.field-app .field-form textarea{font-size:16px}}

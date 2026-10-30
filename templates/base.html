@@ -4,13 +4,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="manifest" href="/static/manifest.json">
+  <link rel="manifest" href="/static/manifest.json?v=d10-pwa-2">
   <meta name="theme-color" content="#104c3d">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Campo">
-  <link rel="apple-touch-icon" href="/static/images/pwa-icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="D10 Agro">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/images/pwa-icon-180.png?v=d10-pwa-2">
   <title>{% block title %}Fechamento de Campo{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'app.css' %}?v=reports-visual-1">
+  <link rel="stylesheet" href="{% static 'app.css' %}?v=d10-pwa-mobile-1">
 </head>
 <body>
   <div class="app-shell{% if platform_access.leader_only %} field-shell{% endif %}">

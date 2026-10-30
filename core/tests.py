@@ -161,6 +161,18 @@ class FieldBackendTests(TestCase):
         self.assertContains(response, "iPhone ou iPad")
         self.assertContains(response, "Computador")
         self.assertContains(response, "Antes de ir para o campo")
+        self.assertContains(response, 'name="apple-mobile-web-app-title" content="D10 Agro"')
+
+    def test_field_app_explains_when_leader_has_no_unit_scope(self):
+        self.user.scopes.filter(tenant=self.tenant).delete()
+        UserScope.objects.create(user=self.user, tenant=self.tenant, role="leader")
+
+        response = self.client.get("/campo/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Nenhuma unidade disponível")
+        self.assertContains(response, 'href="/configuracoes/">Meu acesso</a>')
+        self.assertNotContains(response, "Pessoa Permitida")
 
     def test_leader_cannot_open_office_pages_or_submit_office_actions(self):
         paths = [
@@ -352,6 +364,16 @@ class FieldBackendTests(TestCase):
 
         filtered = self.client.get(f"/conferencia/?status=approved&unit={self.unit_allowed.id}")
         self.assertEqual([event.id for event in filtered.context["events"]], [approved_event.id])
+
+        live_update = self.client.get(
+            "/conferencia/?status=all",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(live_update.status_code, 200)
+        self.assertEqual(live_update["Cache-Control"], "private, no-store")
+        self.assertContains(live_update, 'id="conference-events-card"')
+        self.assertContains(live_update, "Diária aprovada")
+        self.assertNotContains(live_update, "Evento fora do escopo")
 
     def test_conference_decision_requires_valid_post_and_invalidates_approved_cycle(self):
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")

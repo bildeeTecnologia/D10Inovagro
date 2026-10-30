@@ -466,6 +466,10 @@ def conference(request):
         "approved_count": event_counts["approved"],
         "rejected_count": event_counts["rejected"],
     }
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        response = render(request, "core/partials/conference_events.html", context)
+        response["Cache-Control"] = "private, no-store"
+        return response
     return render(request, "core/conference.html", context)
 
 

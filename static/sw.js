@@ -1,5 +1,5 @@
-const CACHE = 'fechamento-campo-v8';
-const ASSETS = ['/static/app.css?v=reports-visual-1', '/static/field-app.js', '/static/manifest.json', '/static/images/inovagro-logo.jpg', '/static/images/pwa-icon-192.png', '/static/images/pwa-icon-512.png', '/static/images/pwa-icon-512-maskable.png'];
+const CACHE = 'fechamento-campo-v10';
+const ASSETS = ['/static/app.css?v=d10-pwa-mobile-1', '/static/field-app.js', '/static/manifest.json?v=d10-pwa-2', '/static/images/inovagro-logo.jpg', '/static/images/pwa-icon-180.png?v=d10-pwa-2', '/static/images/pwa-icon-192.png?v=d10-pwa-2', '/static/images/pwa-icon-512.png?v=d10-pwa-2', '/static/images/pwa-icon-512-maskable.png?v=d10-pwa-2'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('fechamento-campo-') && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {

@@ -119,7 +119,7 @@
       button.hidden = true;
       card.hidden = true;
       status.hidden = false;
-      status.textContent = 'App instalado. Abra pelo ícone Campo na tela do aparelho.';
+      status.textContent = 'App instalado. Abra pelo ícone D10 Agro na tela do aparelho.';
     });
     button.addEventListener('click', async () => {
       if (!installPrompt) return;
@@ -131,7 +131,7 @@
       button.hidden = true;
       status.hidden = false;
       status.textContent = choice.outcome === 'accepted'
-        ? 'Instalação iniciada. Procure o ícone Campo na tela do aparelho.'
+        ? 'Instalação iniciada. Procure o ícone D10 Agro na tela do aparelho.'
         : 'Tudo bem. Se quiser instalar depois, siga os passos do seu aparelho acima.';
     });
   };

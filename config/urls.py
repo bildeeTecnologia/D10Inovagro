@@ -14,3 +14,8 @@ urlpatterns = [
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("", include("core.urls")),
 ]
+
+handler400 = "core.error_views.bad_request"
+handler403 = "core.error_views.forbidden"
+handler404 = "core.error_views.not_found"
+handler500 = "core.error_views.server_error"
