@@ -14,6 +14,10 @@ Copy-Item .env.example .env
 
 Acesse `http://127.0.0.1:8000/` para abrir o painel da aplicação. A tela `/admin/` é o cadastro técnico do Django e exige uma conta de equipe.
 
+## Homologação em VPS/Coolify
+
+Para um deploy inicial controlado, consulte [DEPLOY_HOMOLOGACAO.md](DEPLOY_HOMOLOGACAO.md). O procedimento usa Dockerfile, Gunicorn e WhiteNoise, exige HTTPS e banco Supabase separado de staging, não executa migrations nem cria usuários automaticamente e proíbe dados reais de folha. Não use `runserver` em serviço exposto nem copie o `.env` local para a VPS.
+
 Para encerrar a sessão ou trocar de usuário, use **Sair** no cabeçalho. O botão envia um POST protegido por CSRF, encerra a sessão no servidor e redireciona para `/login/`. Após a saída, acessar novamente uma página interna exige autenticação; abrir `/logout/` diretamente por GET não encerra a sessão.
 
 Para validar a primeira prévia do líder de campo, acesse `http://127.0.0.1:8000/campo/`. A tela usa IndexedDB para manter lançamentos pendentes no aparelho e envia os eventos ao endpoint `/api/v1/events/sync/` quando há conexão.
@@ -23,7 +27,7 @@ Usuário de demonstração criado pelo comando `seed_demo`:
 - usuário: `demo`
 - senha: `demo12345`
 
-O comando `seed_demo` configura esse usuário como administrador apenas no ambiente local de demonstração. Para corrigir ou recriar o acesso depois de uma alteração, execute novamente `python manage.py seed_demo`.
+Uso exclusivamente local, com dados sintéticos. Nunca execute `seed_demo` nem use essas credenciais em VPS, staging ou produção. O comando `seed_demo` configura esse usuário como administrador no ambiente local de demonstração. Para corrigir ou recriar o acesso local depois de uma alteração, execute novamente `python manage.py seed_demo`.
 
 ## Permissões por perfil e unidade
 
