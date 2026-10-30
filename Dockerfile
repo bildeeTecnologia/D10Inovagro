@@ -14,9 +14,11 @@ RUN python -m pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
-# Collect only static assets at build time; runtime secrets are supplied by Coolify.
-RUN DJANGO_DEBUG=1 \
-    DJANGO_SECRET_KEY=build-only-not-a-runtime-secret \
+# Build static assets without a database connection or any runtime secrets.
+RUN DATABASE_URL= \
+    DJANGO_DEBUG=0 \
+    DJANGO_SECRET_KEY=build-only-not-runtime-secret-abcdefghijklmnopqrstuvwxyz-0123456789 \
+    DJANGO_COLLABORATOR_ID_KEY=build-only-not-runtime-id-key-abcdefghijklmnopqrstuvwxyz-0123456789 \
     DJANGO_ALLOWED_HOSTS=localhost \
     python manage.py collectstatic --noinput
 

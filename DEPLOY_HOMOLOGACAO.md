@@ -35,7 +35,7 @@ Gere as duas chaves fora do repositório, em máquina confiável, por exemplo co
 
 1. Crie um serviço Dockerfile apontando para o repositório/branch de homologação. Conceda ao Coolify acesso privado ao repositório pela integração de menor escopo disponível; proteja e revogue a credencial se houver suspeita de exposição.
 2. Configure domínio, TLS automático e acesso de rede restrito. Encaminhe tráfego para a porta interna `8000`; não exponha essa porta diretamente à internet. Confirme que o proxy remove/substitui headers encaminhados enviados pelo cliente.
-3. Defina as variáveis acima como runtime secrets. Não passe segredos de runtime como build args. O Dockerfile executa `collectstatic` durante a construção e inicia Gunicorn como usuário sem privilégios; o servidor de desenvolvimento do Django não é usado.
+3. Defina as variáveis acima como runtime secrets e desative qualquer opção **Available during build/Build Variable** para `DATABASE_URL`, `DJANGO_SECRET_KEY` e `DJANGO_COLLABORATOR_ID_KEY`. O log de build deve deixar de listar esses nomes como `--build-arg`. O Dockerfile executa `collectstatic` isoladamente, com `DEBUG=False`, `DATABASE_URL` vazio e chaves fictícias exclusivas do build; inicia Gunicorn como usuário sem privilégios; o servidor de desenvolvimento do Django não é usado.
 4. Build/deploy inicial. Confirme que o serviço está saudável via `https://<domínio>/login/`, que CSS/JS carregam e que o navegador não mostra conteúdo misto. Não habilite `DEBUG` para diagnosticar um serviço público.
 5. Antes de cada release com migration: faça backup do banco staging e valide restauração; execute `python manage.py migrate --plan`, revise o plano e então aplique `python manage.py migrate` em comando de release aprovado. O comando de inicialização do contêiner não faz isso automaticamente.
 6. Execute `python manage.py check --deploy` dentro do ambiente com as mesmas variáveis do serviço, antes de abrir o piloto. Revise todos os avisos e não os ignore sem justificativa documentada.
@@ -67,3 +67,4 @@ O `check --deploy` local não representa o ambiente Coolify e pode produzir avis
 - [ ] Testes de PWA/sincronização feitos apenas com dados sintéticos.
 
 Mesmo cumprindo este checklist, trata-se de homologação controlada; isso não autoriza uso com dados reais de folha nem equivale a auditoria de segurança ou prontidão de produção.
+Configure os valores no painel de variáveis/segredos do serviço como **disponíveis em runtime**, não como Build Variables/build args. As credenciais do Supabase e as chaves Django não são necessárias para `collectstatic` e não devem ser passadas ao construtor.
