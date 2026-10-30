@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Aplicação de rubricas</p><h1>{{ title }}</h1></div><a class="button secondary" href="{% url 'rule_list' %}">Voltar</a></div>
+<section class="card">
+  <div class="notice-box"><strong>Modalidades desta etapa</strong><p>Valor mensal fixo: sem proporcionalidade automática, exige mês completo de vigência e emprego. Valor por ocorrência: uma ocorrência por colaborador, regra e data, com aprovação do DP. Conferência: vínculo informativo e valor esperado opcional, sem desconto ou pagamento. As regras aprovadas não podem ser editadas.</p></div>
+  <p>Exemplos: limpeza mensal de veículo usa uma regra mensal fixa e um vínculo por colaborador; pensão de conferência usa rubrica informativa e vínculo sem fim; adicional eventual usa regra por ocorrência disponibilizada ao campo.</p>
+  <p>Chuva e 12h continuam nos fluxos próprios. Adiantamento é somente solicitação administrativa nesta etapa; lançamento/aprovação não comprovam que foi pago e não geram abatimento.</p>
+  {% if form.rubric and not form.fields.rubric.queryset %}<div class="notice-box">Nenhuma rubrica elegível. <a href="{% url 'rubric_create' %}">Cadastre uma rubrica</a> ativa, de provento ou informativa, com ciclo compatível. Rubricas padrão possuem fluxo próprio.</div>{% endif %}
+  {% if form.application and not form.fields.application.queryset %}<div class="notice-box">Nenhuma regra elegível. <a href="{% url 'application_create' %}">Crie uma regra</a> mensal fixa ou informativa e aprove-a antes de vincular colaboradores.</div>{% endif %}
+  <form method="post" class="stack-form">{% csrf_token %}{{ form.as_p }}<button class="button primary" type="submit">Salvar</button></form>
+</section>
+{% endblock %}

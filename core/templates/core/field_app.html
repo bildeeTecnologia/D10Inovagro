@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}App do líder — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="field-app" data-unit-id="{{ unit.id|default:'' }}" data-collaborator-id="{{ collaborator.id|default:'' }}">
+  <div class="field-header"><div><p class="eyebrow">App do líder</p><h1>Fechamento de Campo</h1><p class="subtitle">{{ unit.name|default:'Selecione uma unidade para iniciar' }}</p></div><span id="connection-status" class="connection online">Online</span></div>
+  <section class="field-card install-card" id="pwa-install-card" aria-labelledby="pwa-install-title">
+    <div class="install-heading"><div><p class="eyebrow">Acesso rápido no celular</p><h2 id="pwa-install-title">Instale o app no seu aparelho</h2></div><span class="install-icon" aria-hidden="true">＋</span></div>
+    <p class="install-intro">O ícone do Campo ficará junto dos outros aplicativos. Toque nele para abrir esta tela.</p>
+    <button id="pwa-install-button" class="button primary install-action" type="button" hidden>Instalar aplicativo</button>
+    <div class="install-guides">
+      <details class="install-guide" id="install-android"><summary>Celular Android</summary><ol><li>Abra esta página no <strong>Google Chrome</strong>.</li><li>Toque nos três pontinhos <strong>⋮</strong>, no alto da tela.</li><li>Toque em <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong> e confirme.</li></ol></details>
+      <details class="install-guide" id="install-iphone"><summary>iPhone ou iPad</summary><ol><li>Abra esta página no <strong>Safari</strong>.</li><li>Toque no botão <strong>Compartilhar</strong> <span aria-label="compartilhar">□↑</span>.</li><li>Role a lista e toque em <strong>Adicionar à Tela de Início</strong>; depois toque em <strong>Adicionar</strong>.</li></ol></details>
+      <details class="install-guide" id="install-computer"><summary>Computador</summary><ol><li>Abra esta página no <strong>Chrome</strong> ou <strong>Microsoft Edge</strong>.</li><li>Procure o ícone de instalação na barra de endereço ou abra o menu do navegador.</li><li>Escolha <strong>Instalar Fechamento de Campo</strong> e confirme.</li></ol></details>
+    </div>
+    <p class="install-tip"><strong>Antes de ir para o campo:</strong> instale e abra o app uma vez enquanto estiver conectado à internet. Sem sinal, os registros ficam guardados no aparelho até a conexão voltar e a sincronização terminar.</p>
+    <p id="pwa-install-status" class="install-status" role="status" aria-live="polite" hidden></p>
+  </section>
+  {% if units|length > 1 %}<form method="get" class="field-card"><label for="field-unit">Unidade</label><select id="field-unit" name="unit" onchange="this.form.submit()"><option value="">Selecione a unidade</option>{% for available_unit in units %}<option value="{{ available_unit.id }}"{% if unit.id == available_unit.id %} selected{% endif %}>{{ available_unit.name }}</option>{% endfor %}</select><noscript><button class="button secondary" type="submit">Selecionar</button></noscript></form>{% endif %}
+  <section class="offline-banner"><strong id="offline-title">Lançamento rápido</strong><span id="offline-message">Registre ocorrências mesmo quando estiver sem sinal.</span></section>
+  <section class="field-card"><div class="card-head"><h2>O que aconteceu?</h2><span class="tag" id="queue-count">0 pendentes</span></div><div class="event-types">{% for value,label in event_types %}<button class="event-type{% if value == 'additional_12h' %} event-type-highlight{% endif %}" data-event-type="{{ value }}" {% if not unit %}disabled{% endif %}>{% if value == 'additional_12h' %}★ {% endif %}{{ label }}</button>{% endfor %}</div><p class="field-hint"><strong>Adicional 12h:</strong> use uma ocorrência por vez. O líder lança e o DP aprova para pagamento no dia 10.</p><form id="field-event-form" class="field-form" hidden>{% csrf_token %}<label>Colaborador<select id="collaborator-id" required><option value="">Selecione o colaborador</option>{% for person in collaborators %}<option value="{{ person.id }}">{{ person.name }}</option>{% endfor %}</select></label><label>Data<input id="event-date" type="date" required></label><label>Quantidade<input id="event-quantity" type="number" min="0.01" step="0.01" value="1" required></label><label>Motivo<textarea id="event-reason" rows="3" required placeholder="Explique o que aconteceu"></textarea></label><button class="button primary full-button" type="submit">Salvar lançamento</button></form></section>
+  {% if rubric_applications %}
+  <section class="field-card"><h2>Rubricas autorizadas para esta unidade</h2><p>Uma ocorrência por regra, colaborador e data. O DP precisa aprovar antes da geração de pagamento.</p><div class="event-types">{% for app in rubric_applications %}<button type="button" class="event-type" data-event-type="rubric" data-application-id="{{ app.pk }}">{{ app.rubric.name }}</button>{% endfor %}</div>{% for app in rubric_applications %}<p><strong>{{ app.rubric.name }}:</strong> {{ app.instructions }}</p>{% endfor %}</section>
+  {% endif %}
+  <p class="field-hint">Adiantamento: registre uma solicitação. O lançamento não confirma pagamento nem autoriza desconto automático.</p>
+  <section class="field-card"><div class="card-head"><div><h2>Fila de sincronização</h2><small id="sync-status" class="muted-text">Verificando fila...</small></div><button id="sync-button" class="button secondary" type="button">Sincronizar</button></div><div id="queue-list" class="queue-list"><p class="empty">Nenhum item aguardando sincronização.</p></div></section>
+</div>
+<script>window.FIELD_APP_CONFIG={unitId:"{{ unit.id|default:'' }}"};</script>
+{% endblock %}
+{% block extra_scripts %}<script src="/static/field-app.js"></script>{% endblock %}

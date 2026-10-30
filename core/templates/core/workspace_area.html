@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}{{ area.title }} — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Área de trabalho</p><h1>{{ area.title }}</h1><p class="subtitle">{{ area.description }}</p></div></div>
+<section class="area-guidance" aria-label="Como começar">
+  <h2>Por onde começar?</h2>
+  <p>{{ area.guidance }}</p>
+</section>
+<div class="area-tools">
+  {% for tool in tools %}
+  <article class="card area-tool">
+    <h2>{{ tool.title }}</h2>
+    <p>{{ tool.description }}</p>
+    <details class="tool-example"><summary>Exemplo de uso</summary><p>{{ tool.example }}</p></details>
+    <a class="button secondary" href="{% url tool.route %}">{{ tool.button }}</a>
+  </article>
+  {% endfor %}
+</div>
+{% endblock %}

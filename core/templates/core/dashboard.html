@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Painel do ciclo — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Competência atual</p><h1>Painel do ciclo</h1><p class="subtitle">{% if competency %}{{ competency.month|stringformat:'02d' }}/{{ competency.year }} · {{ competency.get_status_display }}{% else %}Nenhuma competência aberta{% endif %}</p></div><a class="button primary" href="{% url 'event_create' %}">+ Novo lançamento</a></div>
+<section class="metrics">
+  <div class="metric"><span class="metric-icon">▦</span><strong>{{ tenant.companies.count }}</strong><span>empresas</span></div>
+  <div class="metric"><span class="metric-icon">⌖</span><strong>{{ units.count }}</strong><span>unidades</span></div>
+  <div class="metric"><span class="metric-icon">♙</span><strong>{{ collaborator_count }}</strong><span>colaboradores</span></div>
+  <div class="metric accent"><span class="metric-icon">✓</span><strong>{{ pending_count }}</strong><span>pendências</span></div>
+</section>
+<section class="card timeline"><div class="step done">Abertura<small>Concluída</small></div><div class="step active">Lançamentos<small>Em andamento</small></div><div class="step">Conferência<small>Próxima etapa</small></div><div class="step">Fechamento<small>Pendente</small></div></section>
+<div class="grid-2">
+  <section class="card"><div class="card-head"><h2>Unidades do ciclo</h2><span class="tag">{{ event_count }} lançamentos</span></div><table><thead><tr><th>Unidade</th><th>Eventos</th><th>Status</th></tr></thead><tbody>{% for unit in units %}<tr><td><strong>{{ unit.name }}</strong><small>{{ unit.region }}</small></td><td>{{ unit.events.count }}</td><td><span class="status good">Em acompanhamento</span></td></tr>{% empty %}<tr><td colspan="3">Nenhuma unidade cadastrada.</td></tr>{% endfor %}</tbody></table></section>
+  <section class="card"><div class="card-head"><h2>Últimos lançamentos</h2><a href="{% url 'event_list' %}">Ver todos</a></div><div class="event-list">{% for event in events %}<div class="event-row"><span class="event-dot"></span><div><strong>{{ event.get_event_type_display }}</strong><small>{{ event.collaborator.name }} · {{ event.unit.name }}</small></div><span class="status warning">{{ event.get_status_display }}</span></div>{% empty %}<p class="empty">Nenhum lançamento ainda. Comece criando um evento de campo.</p>{% endfor %}</div></section>
+</div>
+{% endblock %}

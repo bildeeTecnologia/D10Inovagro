@@ -1,0 +1,3 @@
+{% extends 'public_base.html' %}
+{% block title %}Pré-admissão indisponível{% endblock %}
+{% block content %}<div class="public-card"><p class="eyebrow">Pré-admissão</p>{% if admission.status == 'submitted' %}<h1>Dados enviados ao RH</h1><p>Suas respostas foram recebidas e estão em conferência. Entre em contato com o setor de pessoas se precisar corrigir alguma informação.</p>{% else %}<h1>Este acesso não está disponível</h1><p>O link está expirado ou o processo foi encerrado. Entre em contato com o setor de pessoas para solicitar um novo acesso.</p>{% endif %}</div>{% endblock %}

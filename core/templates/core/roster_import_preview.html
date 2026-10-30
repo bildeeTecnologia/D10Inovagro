@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Prévia da carga cadastral — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Revisão obrigatória</p><h1>Prévia da carga cadastral</h1><p class="subtitle">{{ batch.original_name }} · aba {{ batch.sheet_name }} · SHA-256 <code>{{ batch.sha256 }}</code></p></div></div>
+<section class="card">
+  <div class="import-meta"><p><strong>Linhas na planilha:</strong> {{ batch.row_count }}</p><p><strong>Pessoas identificadas:</strong> {{ batch.detected.person_count }}</p><p><strong>Unidades:</strong> {{ batch.detected.unit_count }}</p><p><strong>Vínculos novos:</strong> {{ batch.detected.ready_count }}</p><p><strong>Vínculos já existentes:</strong> {{ batch.detected.existing_count }}</p><p><strong>Linhas com erro:</strong> {{ batch.detected.error_count }}</p></div>
+  {% if batch.errors %}<div class="report-warning"><strong>Há erros que bloqueiam a confirmação</strong><ul>{% for error in batch.errors %}<li>{{ error }}</li>{% endfor %}</ul><p>Corrija as linhas no XLSX e envie novamente. Nenhum registro foi criado.</p></div>{% endif %}
+  {% if batch.detected.warnings %}<div class="notice-box"><strong>Avisos de revisão</strong><ul>{% for warning in batch.detected.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+  <div class="table-scroll"><table><thead><tr><th>Linha(s)</th><th>Colaborador</th><th>Empresa/CNPJ</th><th>Unidade</th><th>Matrícula</th><th>Cargo</th><th>Admissão</th><th>Desligamento</th><th>Situação</th><th>Observação</th></tr></thead><tbody>
+  {% for row in batch.preview %}<tr><td>{{ row.row }}</td><td>{{ row.name }}</td><td>{{ row.company_name }}<br><small>{{ row.company_cnpj }}</small></td><td>{{ row.unit }}</td><td>{{ row.employee_code|default:'—' }}</td><td>{{ row.job_title|default:'—' }}</td><td>{{ row.admission_date }}</td><td>{{ row.termination_date|default:'—' }}</td><td>{{ row.status }}</td><td>{{ row.message }}</td></tr>{% empty %}<tr><td colspan="10" class="empty">Não há vínculos válidos para exibir.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if not batch.errors and batch.status == 'preview' %}<div class="report-warning"><strong>Atenção: ação de gravação</strong><p>Ao confirmar, unidades, pessoas e vínculos serão gravados em transação. Registros já existentes serão ignorados. A identidade será consolidada pelo CPF protegido; nenhuma remuneração é importada.</p><form method="post" action="{% url 'roster_import_confirm' batch.id %}">{% csrf_token %}<button class="button primary" type="submit">Confirmar e gravar este lote</button></form></div>{% endif %}
+  <p><a class="button secondary" href="{% url 'roster_import' %}">Voltar sem confirmar</a></p>
+</section>
+{% endblock %}

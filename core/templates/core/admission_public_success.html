@@ -1,0 +1,3 @@
+{% extends 'public_base.html' %}
+{% block title %}Pré-admissão recebida{% endblock %}
+{% block content %}<div class="public-card"><p class="eyebrow">Pré-admissão</p><h1>{% if submitted %}Dados enviados{% else %}Dados salvos{% endif %}</h1><p>{% if submitted %}O setor de pessoas recebeu suas informações e fará a conferência.{% else %}Seus dados foram salvos. Você pode retornar ao mesmo link para continuar.{% endif %}</p></div>{% endblock %}

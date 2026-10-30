@@ -1,0 +1,73 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#104c3d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Campo">
+  <link rel="apple-touch-icon" href="/static/images/pwa-icon-192.png">
+  <title>{% block title %}Fechamento de Campo{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'app.css' %}?v=reports-visual-1">
+</head>
+<body>
+  <div class="app-shell{% if platform_access.leader_only %} field-shell{% endif %}">
+    {% if request.user.is_authenticated and not platform_access.leader_only %}
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brand-logo" src="{% static 'images/inovagro-logo.jpg' %}" alt="Inovagro">
+        <span class="brand-caption">FECHAMENTO DE CAMPO</span>
+      </div>
+      <nav aria-label="Navegação principal">
+        {% if platform_access.office %}<a href="{% url 'dashboard' %}" class="nav-link{% if request.resolver_match.url_name == 'dashboard' %} active{% endif %}">Visão geral</a>{% endif %}
+        {% if platform_access.office %}
+        {% if platform_access.admissions %}
+        <a href="{% url 'workspace_area' 'pessoas' %}" class="nav-link{% if navigation_area.slug == 'pessoas' %} active{% endif %}"{% if navigation_area.slug == 'pessoas' %} aria-current="page"{% endif %}>Pessoas</a>
+        {% endif %}
+        <a href="{% url 'workspace_area' 'operacao' %}" class="nav-link{% if navigation_area.slug == 'operacao' %} active{% endif %}"{% if navigation_area.slug == 'operacao' %} aria-current="page"{% endif %}>Operação</a>
+        <a href="{% url 'workspace_area' 'fechamento' %}" class="nav-link{% if navigation_area.slug == 'fechamento' %} active{% endif %}"{% if navigation_area.slug == 'fechamento' %} aria-current="page"{% endif %}>Fechamento</a>
+        <a href="{% url 'reports' %}" class="nav-link{% if request.resolver_match.url_name == 'reports' or request.resolver_match.url_name == 'report_export' %} active{% endif %}">Relatórios</a>
+        {% endif %}
+        {% if request.user.is_authenticated %}<a href="{% url 'settings_page' %}" class="nav-link{% if request.resolver_match.url_name == 'settings_page' %} active{% endif %}">Configurações</a>{% endif %}
+      </nav>
+      <div class="sidebar-footer">MVP local<br><small>Ambiente de desenvolvimento</small></div>
+    </aside>
+    {% endif %}
+    <main class="main-content">
+      <header class="topbar">
+        {% if platform_access.leader_only %}<img class="field-brand-logo" src="{% static 'images/inovagro-logo.jpg' %}" alt="Inovagro">{% else %}<span>{{ current_tenant.name|default:"Fechamento de Campo" }}</span>{% endif %}
+        {% if request.user.is_authenticated %}
+        <div class="topbar-user">
+          {{ request.user.get_full_name|default:request.user.username }}
+          <form class="logout-form" method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button class="logout-button" type="submit">Sair</button>
+          </form>
+        </div>
+        {% endif %}
+      </header>
+      {% if platform_access.office and navigation_area and request.resolver_match.url_name != 'workspace_area' %}
+      <nav class="area-breadcrumb" aria-label="Localização">
+        <a href="{% url 'workspace_area' navigation_area.slug %}">Voltar para {{ navigation_area.title }}</a>
+      </nav>
+      {% endif %}
+      {% if platform_access.leader_only %}
+      <nav class="field-navigation" aria-label="Navegação do líder">
+        <a href="{% url 'field_app' %}"{% if request.resolver_match.url_name == 'field_app' %} aria-current="page"{% endif %}>App do líder</a>
+        <a href="{% url 'event_list' %}"{% if request.resolver_match.url_name == 'event_list' or request.resolver_match.url_name == 'event_create' %} aria-current="page"{% endif %}>Lançamentos</a>
+        <a href="{% url 'event_calendar' %}"{% if request.resolver_match.url_name == 'event_calendar' %} aria-current="page"{% endif %}>Calendário</a>
+        <a href="{% url 'communications' %}"{% if request.path|slice:':13' == '/comunicacao/' %} aria-current="page"{% endif %}>Comunicação</a>
+        <a href="{% url 'settings_page' %}"{% if request.resolver_match.url_name == 'settings_page' %} aria-current="page"{% endif %}>Meu acesso</a>
+      </nav>
+      {% endif %}
+      {% if messages %}
+        <div class="messages">{% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

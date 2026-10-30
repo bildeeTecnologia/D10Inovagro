@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Pagamentos — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Ciclos e rubricas</p><h1>Pagamentos</h1><p class="subtitle">Composição mensal e pagamento do dia 10 separados por rubrica.</p></div></div>
+<section class="card workflow-card">
+  <div class="card-head"><div><h2>Ciclos de pagamento</h2><span class="muted-text">Os valores são exibidos conforme as unidades liberadas para o usuário.</span></div></div>
+  {% for item in cycles %}
+  <div class="payment-cycle">
+    <div class="card-head"><div><h3>{{ item.cycle.get_cycle_type_display }}</h3><span class="muted-text">{{ item.cycle.competency }} · {{ item.cycle.get_status_display }}{% if item.cycle.payment_date %} · pagamento em {{ item.cycle.payment_date|date:'d/m/Y' }}{% endif %}</span></div><strong>R$ {{ item.total|floatformat:2 }}</strong></div>
+    {% if item.entries %}
+    <div class="table-scroll"><table><thead><tr><th>Colaborador</th><th>Unidade</th><th>Rubrica</th><th>Categoria</th><th>Valor</th><th>Status / origem</th></tr></thead><tbody>
+      {% for entry in item.entries %}<tr><td>{{ entry.collaborator.name }}</td><td>{{ entry.unit.name }}</td><td>{{ entry.rubric.name }}</td><td>{{ entry.rubric.get_category_display }}</td><td><strong>R$ {{ entry.amount|floatformat:2 }}</strong></td><td>{{ entry.get_status_display }}
+        {% if entry.source_agreement_id %}<br>Vínculo #{{ entry.source_agreement_id }}{% elif entry.source_event_id %}<br>Evento #{{ entry.source_event_id }}{% endif %}
+        <details><summary>Memória do lançamento</summary><pre>{{ entry.memory }}</pre></details>
+      </td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty">Nenhum lançamento materializado neste ciclo.</p>{% endif %}
+    {% if item.can_approve and item.entries and item.cycle.status != 'approved' and item.cycle.competency.status == 'review' %}
+    <form method="post" action="{% url 'payment_cycle_approve' item.cycle.id %}">{% csrf_token %}<label for="approval-reason-{{ item.cycle.id }}">Justificativa da aprovação</label><input id="approval-reason-{{ item.cycle.id }}" name="reason" required minlength="5"><button class="button primary" type="submit">Aprovar ciclo</button></form>
+    {% endif %}
+  </div>
+  {% empty %}<div class="empty-state-inline"><h2>Nenhum ciclo criado</h2><p>Os ciclos serão criados quando o DP executar o cálculo da competência ou gerar as rubricas aprovadas.</p></div>{% endfor %}
+</section>
+{% endblock %}

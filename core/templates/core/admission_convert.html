@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Converter pré-admissão — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Cadastro após aprovação</p><h1>Converter pré-admissão</h1><p class="subtitle">Confira os dados antes de criar o vínculo operacional.</p></div></div>
+<section class="card form-card">
+  <p><strong>Candidato:</strong> {{ admission.candidate_name }}</p>
+  <p><strong>Empresa/CNPJ:</strong> {{ admission.company.legal_name }} — {{ admission.company.cnpj }}</p>
+  <p><strong>Unidade:</strong> {{ admission.unit.name }}</p>
+  <div class="notice-box"><strong>Conversão cadastral, sem efeitos financeiros</strong><p>O CPF será usado para identificar o colaborador no cliente. Um cadastro existente com o mesmo CPF e nome será reutilizado, sem alterar seus dados. Vínculos sobrepostos na mesma unidade e matrículas de outra pessoa bloqueiam a conversão. Cadastros antigos sem CPF identificado precisam de regularização antes de reutilização.</p><p>Salários, regras de remuneração e pagamentos não serão criados. Confira os dados sugeridos a partir da pré-admissão; correções aqui não alteram as respostas originais do candidato.</p></div>
+  <form method="post" class="stack-form">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="button primary" type="submit">Confirmar conversão e criar vínculo</button>
+    <a class="button secondary" href="{% url 'admission_detail' admission.id %}">Voltar sem converter</a>
+  </form>
+</section>
+{% endblock %}

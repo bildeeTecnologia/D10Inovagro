@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block title %}Conferência — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Validação do DP</p>
+    <h1>Conferência</h1>
+    <p class="subtitle">Revise eventos, memória de cálculo e composição mensal antes de aprovar os pagamentos.</p>
+  </div>
+</div>
+
+<section class="card">
+  <form method="get" class="form-grid">
+    <div class="field">
+      <label for="competency">Competência</label>
+      <select id="competency" name="competency">
+        {% for item in competencies %}
+        <option value="{{ item.id }}"{% if selected_competency.id == item.id %} selected{% endif %}>{{ item.month|stringformat:'02d' }}/{{ item.year }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="unit">Unidade</label>
+      <select id="unit" name="unit">
+        <option value="">Todas as unidades permitidas</option>
+        {% for item in units %}
+        <option value="{{ item.id }}"{% if selected_unit.id == item.id %} selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="status">Status do evento</label>
+      <select id="status" name="status">
+        {% for value,label in status_choices %}
+        <option value="{{ value }}"{% if selected_status == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field"><button class="button primary" type="submit">Aplicar filtros</button></div>
+  </form>
+</section>
+
+<section class="card workflow-card">
+  <div class="card-head">
+    <div><h2>Eventos de campo</h2><span class="muted-text">{{ pending_count }} pendentes · {{ approved_count }} aprovados · {{ rejected_count }} rejeitados</span></div>
+    <span class="tag">{{ events|length }} exibidos</span>
+  </div>
+  {% for event in events %}
+  <article class="review-item">
+    <div class="event-dot"></div>
+    <div class="review-main">
+      <strong>{{ event.get_event_type_display }} — {{ event.collaborator.name }}</strong>
+      <small>{{ event.unit.name }} · {{ event.event_date|date:'d/m/Y' }} · quantidade {{ event.quantity }} · {{ event.get_status_display }}</small>
+      <p>{{ event.reason }}</p>
+      {% if event.calculation_result %}
+      <div class="import-meta">
+        <p><strong>Calculado:</strong> R$ {{ event.calculation_result.calculated_amount|floatformat:2 }}</p>
+        <p><strong>Regra:</strong> {{ event.calculation_result.rule.code }} v{{ event.calculation_result.rule.version }}</p>
+        <details><summary>Memória de cálculo</summary><pre>{{ event.calculation_result.memory }}</pre></details>
+      </div>
+      {% elif event.event_type == 'rubric' %}
+      <p><strong>Regra de aplicação:</strong> {{ event.application.rubric.code }} · {{ event.application.get_cycle_type_display }}</p>
+      {% for entry in event.payment_entries.all %}<p>R$ {{ entry.amount }} · {{ entry.get_status_display }}</p><details><summary>Memória de aplicação</summary><pre>{{ entry.memory }}</pre></details>{% empty %}<p>Pagamento ainda não gerado; exige evento aprovado e geração em Regras.</p>{% endfor %}
+      {% elif event.event_type == 'advance' or event.event_type == 'occurrence' %}
+      <p>Registro administrativo; não comprova pagamento nem gera desconto automático.</p>
+      {% elif event.status == 'approved' and event.event_type != 'rain_release' %}
+      <p class="form-error">Evento aprovado sem resultado de cálculo.</p>
+      {% endif %}
+    </div>
+    {% if can_review and event.status == 'pending' %}
+    <div class="review-actions">
+      <form method="post" action="{% url 'conference_decision' event.id 'approve' %}">
+        {% csrf_token %}
+        <input name="reason" placeholder="Justificativa" required minlength="5">
+        <button class="button small-button" type="submit">Aprovar</button>
+      </form>
+      <form method="post" action="{% url 'conference_decision' event.id 'reject' %}">
+        {% csrf_token %}
+        <input name="reason" placeholder="Motivo da rejeição" required minlength="5">
+        <button class="button small-button danger-button" type="submit">Rejeitar</button>
+      </form>
+    </div>
+    {% endif %}
+  </article>
+  {% empty %}
+  <div class="empty-state-inline"><h2>Nenhum evento neste filtro</h2><p>Altere a competência, unidade ou status para consultar outros lançamentos.</p></div>
+  {% endfor %}
+</section>
+
+<section class="card workflow-card">
+  <div class="card-head"><div><h2>Composição mensal</h2><span class="muted-text">Resultados por colaborador e unidade na competência selecionada.</span></div><span class="tag">{{ monthly_results|length }} resultados</span></div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Colaborador</th><th>Unidade</th><th>Dias normais</th><th>Dias chuva</th><th>Salário combinado</th><th>Parcela CLT</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for result in monthly_results %}
+        <tr>
+          <td>{{ result.collaborator.name }}</td>
+          <td>{{ result.unit.name }}</td>
+          <td>{{ result.normal_days }}</td>
+          <td>{{ result.rain_days }}</td>
+          <td>R$ {{ result.normal_amount|floatformat:2 }}</td>
+          <td>R$ {{ result.rain_amount|floatformat:2 }}</td>
+          <td><strong>R$ {{ result.total_amount|floatformat:2 }}</strong></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="empty">Nenhuma composição mensal encontrada para os filtros atuais.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

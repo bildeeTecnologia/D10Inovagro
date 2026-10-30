@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Pré-admissões — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Setor de pessoas</p><h1>Pré-admissões</h1><p class="subtitle">Crie, edite e acompanhe os acessos dos candidatos.</p></div><a class="button primary" href="{% url 'admission_create' %}">Nova pré-admissão</a></div>
+<section class="card"><div class="table-scroll"><table>
+  <thead><tr><th>Candidato</th><th>Empresa</th><th>Unidade</th><th>Status</th><th>Validade</th><th>Ações</th></tr></thead>
+  <tbody>{% for admission in admissions %}<tr>
+    <td><strong>{{ admission.candidate_name }}</strong><br><span class="muted-text">{{ admission.candidate_phone }}</span></td>
+    <td>{{ admission.company.legal_name }}</td><td>{{ admission.unit.name }}</td>
+    <td><span class="status warning">{% if admission.converted_link_id %}Convertida em cadastro{% else %}{{ admission.get_status_display }}{% endif %}</span></td>
+    <td>{{ admission.expires_at|date:'d/m/Y H:i'|default:'—' }}</td>
+    <td>
+      {% if admission.status == 'submitted' or admission.status == 'returned' %}<a class="button small primary" href="{% url 'admission_detail' admission.id %}">Conferir respostas</a>{% endif %}
+      {% if admission.status == 'approved' %}<a class="button small primary" href="{% url 'admission_detail' admission.id %}">{% if admission.converted_link_id %}Ver cadastro gerado{% else %}Conferir conversão{% endif %}</a>{% endif %}
+      {% if not admission.converted_link_id %}
+      <a class="button small secondary" href="{% url 'admission_edit' admission.id %}">Editar</a>
+      <a class="button small secondary" href="{% url 'admission_public' admission.token %}" target="_blank">Abrir link</a>
+      <form method="post" action="{% url 'admission_regenerate_access' admission.id %}" style="display:inline">{% csrf_token %}<button class="button small secondary" type="submit">Nova chave</button></form>
+      {% endif %}
+      {% if admission.status != 'cancelled' and admission.status != 'approved' %}<form method="post" action="{% url 'admission_review' admission.id 'cancel' %}" style="display:inline">{% csrf_token %}<button class="button small danger" type="submit">Cancelar</button></form>{% endif %}
+    </td>
+  </tr>{% empty %}<tr><td colspan="6" class="empty">Nenhuma pré-admissão cadastrada.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+{% endblock %}

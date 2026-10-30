@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+{% block title %}Relatórios — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Visão gerencial</p>
+    {% if report_type == 'event_costs' %}
+      <h1>Custos por unidade</h1>
+      <p class="subtitle">Painel da competência {{ period_label|default:'—' }} · custos calculados por evento e unidade.</p>
+    {% else %}
+      <h1>Relatórios</h1>
+      <p class="subtitle">Consulte custos calculados, compare competências e unidades e emita arquivos rastreáveis.</p>
+    {% endif %}
+  </div>
+</div>
+
+<section class="card filter-card">
+  <form method="get" class="filter-form">
+    <select name="report_type" aria-label="Tipo de relatório">
+      <option value="cost"{% if report_type == 'cost' %} selected{% endif %}>Custo total por unidade</option>
+      <option value="event_costs"{% if report_type == 'event_costs' %} selected{% endif %}>Custos calculados por evento</option>
+      <option value="events"{% if report_type == 'events' %} selected{% endif %}>Eventos detalhados</option>
+      <option value="monthly"{% if report_type == 'monthly' %} selected{% endif %}>Composição mensal CLT e combinado</option>
+    </select>
+    {% if report_type == 'event_costs' %}
+      <select name="company" aria-label="Filtrar empresa">
+        <option value="">Todas as empresas permitidas</option>
+        {% for company in companies %}
+          <option value="{{ company.id }}"{% if filters.company == company.id|stringformat:'s' %} selected{% endif %}>{{ company.legal_name }} — {{ company.cnpj }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    <select name="unit" aria-label="Filtrar unidade">
+      <option value="">Todas as unidades permitidas</option>
+      {% for unit in units %}
+        <option value="{{ unit.id }}"{% if filters.unit == unit.id|stringformat:'s' %} selected{% endif %}>{{ unit.name }} — {{ unit.company.cnpj }}</option>
+      {% endfor %}
+    </select>
+    <select name="competency" aria-label="Filtrar competência">
+      <option value="">{% if report_type == 'event_costs' %}Competência mais recente{% else %}Todas as competências{% endif %}</option>
+      {% for competency in competencies %}
+        <option value="{{ competency.id }}"{% if filters.competency == competency.id|stringformat:'s' %} selected{% endif %}>{{ competency }}</option>
+      {% endfor %}
+    </select>
+    {% if report_type == 'events' %}
+      <select name="status" aria-label="Filtrar status do evento">
+        <option value="">Todos os status</option>
+        {% for value,label in status_choices %}
+          <option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    {% elif report_type == 'event_costs' %}
+      <select name="status" aria-label="Filtrar status dos eventos calculados">
+        {% for value,label in cost_status_choices %}
+          <option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    <button class="button secondary small-button" type="submit">Atualizar painel</button>
+  </form>
+</section>
+
+<section class="card workflow-card">
+  <div class="card-head report-card-head">
+    <div>
+      <h2>
+        {% if report_type == 'events' %}Eventos detalhados
+        {% elif report_type == 'monthly' %}Composição mensal CLT e combinado
+        {% elif report_type == 'event_costs' %}Painel de custos calculados
+        {% else %}Custo total por unidade{% endif %}
+      </h2>
+      <span class="muted-text">{{ rows|length }} linhas de detalhamento · {{ inconsistencies|length }} inconsistências</span>
+    </div>
+    <div class="report-actions">
+      <a class="button secondary small-button" href="{% url 'report_export' 'xlsx' %}?report_type={{ report_type }}&amp;company={{ filters.company }}&amp;unit={{ filters.unit }}&amp;competency={{ filters.competency }}&amp;status={{ filters.status }}">Baixar XLSX</a>
+      <a class="button primary small-button" href="{% url 'report_export' 'pdf' %}?report_type={{ report_type }}&amp;company={{ filters.company }}&amp;unit={{ filters.unit }}&amp;competency={{ filters.competency }}&amp;status={{ filters.status }}">Baixar PDF</a>
+    </div>
+  </div>
+
+  {% if report_type == 'event_costs' %}
+    <div class="notice-box report-explanation">
+      <strong>Como interpretar este painel</strong>
+      <p>Os valores são resultados de cálculo registrados para eventos e usam <strong>somente eventos aprovados por padrão</strong>. Cálculo não comprova pagamento aprovado, exportado ou efetuado. A plataforma ainda não registra volume produzido por unidade nem metas orçamentárias; por isso, o painel mostra custo total calculado, não custo por produção nem eficiência.</p>
+    </div>
+
+    {% if uncalculated_event_count %}
+      <div class="report-warning report-warning-inline"><strong>{{ uncalculated_event_count }} evento(s) sem cálculo</strong> na competência e nos filtros atuais; esses registros não compõem os valores nem os gráficos.</div>
+    {% endif %}
+
+    <div class="metrics report-metrics report-metrics-visual">
+      <div class="metric"><span class="metric-icon" aria-hidden="true">R$</span><strong>R$ {{ event_cost_total|floatformat:2 }}</strong><span>Total calculado · {{ event_cost_count }} evento(s) · {{ event_cost_unit_count }} unidade(s)</span></div>
+      <div class="metric"><span class="metric-icon" aria-hidden="true">#</span><strong>{{ event_cost_collaborator_count }}</strong><span>Colaboradores com cálculo na competência</span></div>
+      <div class="metric metric-variation metric-variation-{{ variation.direction }}"><span class="metric-icon" aria-hidden="true">%</span><strong>{{ variation.display }}</strong><span>{{ variation.detail }}</span></div>
+    </div>
+
+    <div class="report-visual-grid">
+      <section class="report-chart-card">
+        <div class="report-section-heading"><div><h3>Custo calculado por unidade</h3><p class="muted-text">Competência {{ period_label }} · valores absolutos, sem divisão por produção.</p></div></div>
+        <div class="horizontal-bars" role="list" aria-label="Custo calculado por unidade">
+          {% for item in unit_chart %}
+            <div class="chart-bar-row" role="listitem">
+              <div class="chart-bar-heading"><strong>{{ item.label }}</strong><span>{{ item.formatted_total }}</span></div>
+              <div class="chart-bar-track" role="img" aria-label="{{ item.label }}: {{ item.formatted_total }}"><span style="width:{{ item.width }}%"></span></div>
+              <small>{{ item.events }} evento(s) com cálculo</small>
+            </div>
+          {% empty %}
+            <p class="chart-empty">Sem resultado de cálculo para esta competência e filtros.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="report-chart-card">
+        <div class="report-section-heading"><div><h3>Evolução por competência</h3><p class="muted-text">Até 12 competências, da mais antiga à selecionada.</p></div></div>
+        {% if trend_has_data %}
+          <svg class="trend-svg" viewBox="0 0 1000 278" role="img" aria-labelledby="trend-title trend-desc">
+            <title id="trend-title">Evolução do custo calculado por competência</title>
+            <desc id="trend-desc">Série mensal baseada apenas em eventos com resultado de cálculo dentro dos filtros atuais.</desc>
+            {% for axis in trend_axis %}
+              <line x1="72" x2="980" y1="{{ axis.y }}" y2="{{ axis.y }}" class="trend-gridline" />
+              <text x="66" y="{{ axis.y|add:4 }}" text-anchor="end" class="trend-axis-label">{{ axis.label }}</text>
+            {% endfor %}
+            {% for segment in trend_segments %}<polyline points="{{ segment }}" class="trend-line" />{% endfor %}
+            {% for point in trend_points %}
+              {% if point.has_data %}<circle cx="{{ point.x }}" cy="{{ point.y }}" r="5" class="trend-point"><title>{{ point.full_label }}: {{ point.amount_label }}</title></circle>{% endif %}
+              <text x="{{ point.x }}" y="250" text-anchor="middle" class="trend-month-label">{{ point.label }}</text>
+            {% endfor %}
+          </svg>
+          <p class="muted-text chart-note">Uma competência sem ponto indica ausência de resultado de cálculo registrado; não significa custo zero.</p>
+        {% else %}
+          <p class="chart-empty">Ainda não há competências com resultado de cálculo para formar a série histórica.</p>
+        {% endif %}
+      </section>
+
+      <section class="report-chart-card report-chart-card-wide">
+        <div class="report-section-heading"><div><h3>Composição por tipo de evento</h3><p class="muted-text">Valores calculados na competência {{ period_label }}; selecione outro período para comparar.</p></div></div>
+        <div class="horizontal-bars horizontal-bars-events" role="list" aria-label="Custo calculado por tipo de evento">
+          {% for item in event_chart %}
+            <div class="chart-bar-row" role="listitem">
+              <div class="chart-bar-heading"><strong>{{ item.label }}</strong><span>{{ item.formatted_total }}</span></div>
+              <div class="chart-bar-track" role="img" aria-label="{{ item.label }}: {{ item.formatted_total }}"><span style="width:{{ item.width }}%"></span></div>
+              <small>{{ item.events }} evento(s) com cálculo</small>
+            </div>
+          {% empty %}
+            <p class="chart-empty">Sem evento com resultado de cálculo nesta competência.</p>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+
+    <section class="report-insights" aria-label="Destaques da competência">
+      <article class="report-insight"><span class="eyebrow">Maior custo por unidade</span>{% if top_unit %}<strong>{{ top_unit.label }}</strong><p>{{ top_unit.formatted_total }} · {{ top_unit.events }} evento(s) calculado(s)</p>{% else %}<p class="muted-text">Sem dados calculados.</p>{% endif %}</article>
+      <article class="report-insight"><span class="eyebrow">Maior custo por evento</span>{% if top_event %}<strong>{{ top_event.label }}</strong><p>{{ top_event.formatted_total }} · {{ top_event.events }} ocorrência(s) calculada(s)</p>{% else %}<p class="muted-text">Sem dados calculados.</p>{% endif %}</article>
+      <article class="report-insight report-insight-quality"><span class="eyebrow">Conferência de dados</span><strong>{{ uncalculated_event_count }} sem cálculo</strong><p>Eventos na seleção que não entram no total até existir resultado calculado.</p></article>
+    </section>
+
+    <section class="report-subsection">
+      <div class="report-section-heading">
+        <div><h3>Comparativo por unidade, evento e competência</h3><p class="muted-text">Cada linha mostra o mesmo evento e status por unidade; as colunas permitem comparar as competências anteriores até o período selecionado.</p></div>
+        {% if has_more_competencies %}<span class="tag">Exibindo até 12 competências</span>{% endif %}
+      </div>
+      <div class="table-scroll report-matrix">
+        <table>
+          <thead><tr><th>Unidade</th><th>Evento</th><th>Status</th>{% for header in comparison_headers %}<th>{{ header.label }}</th>{% endfor %}<th>Total do período</th></tr></thead>
+          <tbody>
+            {% for row in comparison_rows %}
+              <tr><td>{{ row.unidade }}</td><td>{{ row.evento }}</td><td>{{ row.status }}</td>{% for cell in row.cells %}<td>{% if cell != None %}R$ {{ cell|floatformat:2 }}{% else %}<span class="muted-text">—</span>{% endif %}</td>{% endfor %}<td><strong>R$ {{ row.period_total|floatformat:2 }}</strong></td></tr>
+            {% empty %}<tr><td colspan="{{ comparison_headers|length|add:4 }}" class="empty">Nenhum resultado de cálculo encontrado para os filtros selecionados.</td></tr>{% endfor %}
+          </tbody>
+          {% if comparison_rows %}<tfoot><tr class="report-total-row"><th colspan="3">Total por competência</th>{% for total in comparison_totals %}<th>R$ {{ total|floatformat:2 }}</th>{% endfor %}<th>R$ {{ comparison_period_total|floatformat:2 }}</th></tr></tfoot>{% endif %}
+        </table>
+      </div>
+      {% if has_more_competencies %}<p class="muted-text report-footnote">A matriz mostra até 12 competências anteriores, encerrando na competência selecionada.</p>{% endif %}
+    </section>
+
+    <section class="report-subsection">
+      <div class="report-section-heading"><div><h3>Detalhamento dos custos calculados</h3><p class="muted-text">Quantidade e média referem-se aos eventos com resultado de cálculo; o período da tabela acompanha o comparativo.</p></div></div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Competência</th><th>Unidade</th><th>Evento</th><th>Status</th><th>Eventos</th><th>Total calculado</th><th>Média por evento</th></tr></thead>
+          <tbody>{% for row in rows %}<tr><td>{{ row.competencia }}</td><td>{{ row.unidade }}</td><td>{{ row.evento }}</td><td>{{ row.status }}</td><td>{{ row.quantidade }}</td><td><strong>R$ {{ row.total|floatformat:2 }}</strong></td><td>R$ {{ row.media|floatformat:2 }}</td></tr>{% empty %}<tr><td colspan="7" class="empty">Nenhum resultado de cálculo encontrado.</td></tr>{% endfor %}</tbody>
+        </table>
+      </div>
+    </section>
+  {% elif report_type == 'events' %}
+    <div class="table-scroll"><table>
+      <thead><tr><th>Competência</th><th>Unidade</th><th>Colaborador</th><th>Evento</th><th>Data</th><th>Qtd.</th><th>Status</th></tr></thead>
+      <tbody>{% for row in rows %}<tr><td>{{ row.competencia }}</td><td>{{ row.unidade }}</td><td>{{ row.colaborador }}</td><td>{{ row.tipo }}</td><td>{{ row.data }}</td><td>{{ row.quantidade }}</td><td>{{ row.status }}</td></tr>{% empty %}<tr><td colspan="7" class="empty">Nenhum evento encontrado.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  {% elif report_type == 'monthly' %}
+    <div class="table-scroll"><table>
+      <thead><tr><th>Competência</th><th>Colaborador</th><th>Unidade</th><th>Dias normais</th><th>Dias chuva</th><th>Valor normal</th><th>Valor chuva</th><th>Total</th></tr></thead>
+      <tbody>{% for row in rows %}<tr><td>{{ row.competencia }}</td><td>{{ row.colaborador }}</td><td>{{ row.unidade }}</td><td>{{ row.dias_normais }}</td><td>{{ row.dias_chuva }}</td><td>R$ {{ row.normal|floatformat:2 }}</td><td>R$ {{ row.chuva|floatformat:2 }}</td><td><strong>R$ {{ row.total|floatformat:2 }}</strong></td></tr>{% empty %}<tr><td colspan="8" class="empty">Nenhuma composição mensal calculada.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  {% else %}
+    <div class="table-scroll"><table>
+      <thead><tr><th>Competência</th><th>Unidade</th><th>Total calculado</th></tr></thead>
+      <tbody>{% for row in rows %}<tr><td>{{ row.competencia }}</td><td>{{ row.unidade }}</td><td><strong>R$ {{ row.total|floatformat:2 }}</strong></td></tr>{% empty %}<tr><td colspan="3" class="empty">Nenhum resultado calculado disponível.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  {% endif %}
+
+  {% if inconsistencies %}<div class="report-warning">Atenção: a prévia possui eventos pendentes ou rejeitados. O relatório não representa fechamento definitivo.</div>{% endif %}
+</section>
+{% endblock %}

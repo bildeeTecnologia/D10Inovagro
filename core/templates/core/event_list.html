@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Lançamentos — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Eventos recebidos</p><h1>Caixa de lançamentos</h1><p class="subtitle">Revise o que chegou das unidades antes do cálculo.</p></div><a class="button primary" href="{% url 'event_create' %}">+ Novo lançamento</a></div>
+<section class="card"><table><thead><tr><th>Data</th><th>Evento</th><th>Colaborador</th><th>Unidade</th><th>Autor</th><th>Status</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.event_date|date:'d/m/Y' }}</td><td><strong>{{ event.get_event_type_display }}</strong><small>{{ event.reason|truncatechars:50 }}</small></td><td>{{ event.collaborator.name }}</td><td>{{ event.unit.name }}</td><td>{{ event.created_by.username }}</td><td><span class="status warning">{{ event.get_status_display }}</span></td></tr>{% empty %}<tr><td colspan="6" class="empty">Nenhum lançamento encontrado.</td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

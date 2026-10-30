@@ -1,0 +1,21 @@
+<section class="card">
+  <div class="card-head"><h2>Regras de aplicação</h2><a class="button primary" href="{% url 'application_create' %}">Nova aplicação</a></div>
+  <p>Defina o comportamento da rubrica. Rascunhos não geram valores. Aprovação congela a configuração; uma mudança exige outra vigência sem sobreposição.</p>
+  <div class="table-scroll"><table><thead><tr><th>Rubrica / unidade</th><th>Modalidade</th><th>Valor / ciclo</th><th>Vigência</th><th>Campo</th><th>Situação / ação</th></tr></thead><tbody>
+  {% for app in applications %}<tr><td>{{ app.rubric.name }}<br>{{ app.unit.name }}</td><td>{{ app.get_mode_display }}</td><td>{{ app.amount|default_if_none:'—' }}<br>{{ app.get_cycle_type_display }}</td><td>{{ app.effective_from|date:'d/m/Y' }} — {{ app.effective_to|date:'d/m/Y'|default:'indeterminado' }}</td><td>{{ app.leader_available|yesno:'Disponível,Não disponível' }}</td><td>{{ app.get_status_display }}{% if app.status == 'draft' %}<br><a href="{% url 'application_edit' app.pk %}">Editar</a><form method="post" action="{% url 'application_approve' app.pk %}">{% csrf_token %}<input name="reason" required minlength="5" placeholder="Justificativa de aprovação"><button class="button small-button" type="submit">Aprovar regra</button></form>{% elif not app.effective_to %}<br><a href="{% url 'application_end' app.pk %}">Definir encerramento</a>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="6">Crie uma rubrica ativa e depois sua regra de aplicação.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="card">
+  <div class="card-head"><h2>Rubricas e acordos por colaborador</h2><a class="button primary" href="{% url 'agreement_create' %}">Vincular colaborador</a></div>
+  <p>Frota mensal: vincule à regra fixa aprovada. Pensão: use somente conferência, sem novo desconto. A comparação automática com rubricas RM ainda depende de mapeamento; o valor esperado é uma referência manual para o DP.</p>
+  <div class="table-scroll"><table><thead><tr><th>Colaborador</th><th>Rubrica / unidade</th><th>Vigência</th><th>Conferência</th><th>Situação / ação</th></tr></thead><tbody>
+  {% for agreement in agreements %}<tr><td>{{ agreement.collaborator.name }}</td><td>{{ agreement.application.rubric.name }}<br>{{ agreement.application.unit.name }}</td><td>{{ agreement.effective_from|date:'d/m/Y' }} — {{ agreement.effective_to|date:'d/m/Y'|default:'indeterminado' }}</td><td>{{ agreement.reference }}<br>Esperado: {{ agreement.expected_amount|default_if_none:'não informado' }}</td><td>{{ agreement.get_status_display }}{% if agreement.status == 'draft' %}<br><a href="{% url 'agreement_edit' agreement.pk %}">Editar</a><form method="post" action="{% url 'agreement_approve' agreement.pk %}">{% csrf_token %}<input name="reason" required minlength="5" placeholder="Justificativa de aprovação"><button class="button small-button" type="submit">Aprovar vínculo</button></form>{% elif not agreement.effective_to %}<br><a href="{% url 'agreement_end' agreement.pk %}">Definir encerramento</a>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="5">Nenhum vínculo cadastrado.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="card">
+  <h2>Gerar rubricas aprovadas</h2>
+  <p>Aplica vínculos mensais fixos e eventos configurados aprovados. Não gera desconto de pensão, nem pagamento/abatimento de adiantamentos. Reprocessar mantém uma origem por lançamento. Mês parcial bloqueia a geração sem presumir proporcionalidade.</p>
+  <form method="post" action="{% url 'application_generate' %}" class="stack-form">{% csrf_token %}<label for="generation-competency">Competência do trabalho (dia 10 será no mês seguinte)</label><select name="competency" id="generation-competency" required>{% for competency in generation_competencies %}<option value="{{ competency.pk }}">{{ competency }}</option>{% endfor %}</select><button class="button primary" type="submit">Gerar rubricas da competência</button></form>
+</section>

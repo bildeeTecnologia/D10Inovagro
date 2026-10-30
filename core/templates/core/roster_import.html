@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Carga cadastral — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Cadastro em massa</p><h1>Importar unidades e vínculos</h1><p class="subtitle">Envie um XLSX com uma linha por vínculo pessoa–empresa–unidade. A mesma pessoa pode aparecer em várias linhas/unidades.</p></div></div>
+<section class="card">
+  <div class="notice-box"><strong>Prévia antes de gravar</strong><p>O upload não cria cadastros. A confirmação ocorre em uma ação separada. O CPF só é usado para reconhecer a pessoa e não é armazenado em texto aberto; o lote guarda uma impressão digital protegida e remove esses dados de staging após a confirmação.</p></div>
+  <p><a class="button secondary" href="{% url 'roster_import_template' %}">Baixar modelo XLSX</a></p>
+  <form method="post" enctype="multipart/form-data" class="stack-form">{% csrf_token %}{{ form.as_p }}<button class="button primary" type="submit">Analisar e mostrar prévia</button></form>
+</section>
+<section class="card"><div class="card-head"><div><h2>Lotes cadastrais recentes</h2><span class="muted-text">Hash, responsável e estado do lote</span></div></div>
+<table><thead><tr><th>Arquivo</th><th>Linhas</th><th>Hash</th><th>Status</th><th>Responsável</th><th>Confirmado por</th></tr></thead><tbody>
+{% for batch in batches %}<tr><td>{{ batch.original_name }}</td><td>{{ batch.row_count }}</td><td><code>{{ batch.sha256|slice:':12' }}</code></td><td>{{ batch.get_status_display }}</td><td>{{ batch.created_by.username }}</td><td>{{ batch.confirmed_by.username|default:'—' }}</td></tr>{% empty %}<tr><td colspan="6" class="empty">Nenhuma carga cadastral enviada.</td></tr>{% endfor %}
+</tbody></table></section>
+<p><a href="{% url 'import_workbook' %}">Voltar à prévia de folha</a></p>
+{% endblock %}

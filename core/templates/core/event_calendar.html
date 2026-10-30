@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Calendário — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Revisão do período</p><h1>Calendário da unidade</h1><p class="subtitle">{% if competency %}Competência {{ competency.month|stringformat:'02d' }}/{{ competency.year }}{% else %}Nenhuma competência configurada{% endif %}</p></div><a class="button primary" href="{% url 'event_create' %}">+ Novo lançamento</a></div>
+<section class="card calendar-card"><div class="card-head"><h2>Eventos lançados</h2><span class="tag">{{ days|length }} dias com eventos</span></div>{% for day in days %}<div class="calendar-day"><div class="day-label"><strong>{{ day.date|date:'d' }}</strong><span>{{ day.date|date:'M/Y' }}</span></div><div class="day-events">{% for event in day.events %}<div class="calendar-event"><span class="event-dot"></span><div><strong>{{ event.get_event_type_display }}</strong><small>{{ event.collaborator.name }} · {{ event.unit.name }}</small></div><span class="status warning">{{ event.get_status_display }}</span></div>{% endfor %}</div></div>{% empty %}<div class="empty-state-inline"><span class="metric-icon">⌁</span><h2>Nenhum evento lançado</h2><p>Os eventos registrados pelo líder aparecerão aqui para revisão.</p></div>{% endfor %}</section>
+{% endblock %}

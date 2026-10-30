@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Cadastro de rubrica — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">Catálogo do DP</p><h1>{% if rubric.pk %}Editar rubrica{% else %}Nova rubrica{% endif %}</h1><p class="subtitle">Identifique e classifique o componente antes de definir sua regra de cálculo.</p></div>
+  <a class="button secondary" href="{% url 'rule_list' %}">Voltar às regras</a>
+</div>
+<section class="card">
+  <div class="notice-box"><strong>Cadastro não é cálculo</strong><p>Salvar ou ativar esta rubrica não cria um tipo de evento no app do líder, não publica fórmula e não gera pagamentos. Para aplicar valores fixos ou referências de conferência, crie e aprove uma regra de aplicação na tela Regras. Os parâmetros dos cálculos legados continuam no Django Admin.</p></div>
+  {% if form.protected %}
+  <div class="report-warning"><strong>Rubrica protegida</strong><p>Esta rubrica já possui regra de aplicação, lançamentos ou está ligada à geração padrão de pagamentos. Nesta tela, somente as orientações de uso podem ser alteradas. Mudanças financeiras exigem um fluxo de versionamento e homologação; não use o Admin para contornar essa proteção.</p></div>
+  {% elif rubric.pk %}
+  <div class="notice-box"><strong>Código preservado</strong><p>O código não pode ser alterado. Como esta rubrica não possui lançamentos nem é padrão do sistema, os demais campos podem ser revisados com justificativa.</p></div>
+  {% else %}
+  <div class="notice-box"><strong>Comece como inativa</strong><p>Confira a definição com o DP antes de marcar Ativa no catálogo. Para informações de conferência, selecione Informativa e Sem pagamento / a definir.</p></div>
+  {% endif %}
+  <form method="post" class="stack-form">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="button primary" type="submit">Salvar rubrica</button>
+  </form>
+</section>
+<section class="card">
+  <h2>Como preencher corretamente</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Campo</th><th>Finalidade</th><th>Exemplo / cuidado</th></tr></thead>
+    <tbody>
+      <tr><td>Código</td><td>Identificador interno único por cliente</td><td>FROTA_LIMPEZA. Não é necessariamente o código da folha RM. Não reutilize um código para outra finalidade.</td></tr>
+      <tr><td>Descrição / nome</td><td>Nome claro do componente</td><td>Adicional por limpeza de veículo. Não agrupe domingo, feriado e noturno em uma única “Bonificação”.</td></tr>
+      <tr><td>Tipo</td><td>Provento, desconto ou informativa</td><td>Provento: valor a receber. Desconto: abatimento autorizado. Informativa: referência para conferência, sem novo pagamento ou desconto.</td></tr>
+      <tr><td>Ativa no catálogo</td><td>Indica uso cadastral</td><td>Não significa regra aprovada nem altera a geração automática existente.</td></tr>
+      <tr><td>Ciclo previsto</td><td>Classifica a intenção de pagamento</td><td>Mensal; dia 10 referente ao mês anterior; ambos; ou sem pagamento / a definir. Não muda fórmulas ou datas automaticamente.</td></tr>
+      <tr><td>Vigência</td><td>Documenta o período de uso previsto</td><td>O fim não pode ser anterior ao início. A vigência cadastral não cria versionamento automático de cálculo.</td></tr>
+      <tr><td>Orientações e justificativa</td><td>Contexto operacional e rastreabilidade</td><td>Informe critérios, responsável, pendências e por que a alteração é necessária. Não inclua dados pessoais do colaborador.</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Exemplos práticos — não são regras publicadas</h3>
+  <ul>
+    <li><strong>FROTA_LIMPEZA:</strong> provento, inicialmente inativo; ciclo sem pagamento / a definir enquanto o DP não aprovar valor e periodicidade.</li>
+    <li><strong>PENSAO_CONFERENCIA:</strong> informativa, sem pagamento; conferir a retenção da folha oficial, sem descontar novamente.</li>
+    <li><strong>ADIANTAMENTO_ABATIMENTO:</strong> desconto, inicialmente inativo; definir autorização, ciclo e origem do pagamento antecipado antes de implementar o abatimento.</li>
+    <li><strong>ADICIONAL_12H:</strong> código reservado já integrado ao cálculo. A mudança do valor pertence à regra de cálculo, não a este cadastro.</li>
+  </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,4 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Entrar — Fechamento de Campo{% endblock %}
+{% block content %}<section class="auth-card"><div class="brand auth-brand"><img class="brand-logo" src="{% static 'images/inovagro-logo.jpg' %}" alt="Inovagro"><span class="brand-caption">FECHAMENTO DE CAMPO</span></div><h1>Entrar</h1><p class="subtitle">Acesse o ambiente de desenvolvimento.</p><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button primary full-button" type="submit">Entrar</button></form></section>{% endblock %}

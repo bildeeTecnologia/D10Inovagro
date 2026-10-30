@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Conferência de pré-admissão{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Validação obrigatória do RH</p><h1>Conferir pré-admissão</h1><p class="subtitle">Analise as respostas antes de tomar uma decisão.</p></div></div>
+<section class="card">
+  <div class="import-meta">
+    <p><strong>Candidato:</strong> {{ admission.candidate_name }}</p>
+    <p><strong>Telefone:</strong> {{ admission.candidate_phone }}</p>
+    <p><strong>Empresa:</strong> {{ admission.company.legal_name }} — {{ admission.company.cnpj }}</p>
+    <p><strong>Unidade:</strong> {{ admission.unit.name }}</p>
+    <p><strong>Cargo:</strong> {{ admission.job_title|default:'Não informado' }}</p>
+    <p><strong>Data prevista:</strong> {{ admission.expected_admission_date|date:'d/m/Y'|default:'Não informada' }}</p>
+    <p><strong>Status:</strong> {{ admission.get_status_display }}</p>
+  </div>
+  {% if admission.converted_link_id %}
+  <div class="notice-box">
+    <h2>Conversão concluída</h2>
+    <p>Registrada em {{ admission.converted_at|date:'d/m/Y H:i' }} por {{ admission.converted_by.get_full_name|default:admission.converted_by.username }}.</p>
+    <p><strong>Colaborador:</strong> {{ admission.converted_link.collaborator.name }} · Cadastro #{{ admission.converted_link.collaborator_id }} · Vínculo #{{ admission.converted_link_id }}</p>
+    <p><strong>Matrícula:</strong> {{ admission.converted_link.employee_code|default:'Não informada' }} · <strong>Cargo:</strong> {{ admission.converted_link.job_title }} · <strong>Admissão:</strong> {{ admission.converted_link.admission_date|date:'d/m/Y' }}</p>
+    <p>Nenhum salário ou pagamento foi criado por esta conversão.</p>
+  </div>
+  {% elif admission.status == 'approved' and can_convert %}
+  <p><a class="button primary" href="{% url 'admission_convert' admission.id %}">Converter em colaborador e vínculo</a></p>
+  {% endif %}
+  <h2>Respostas do candidato</h2>
+  <div class="table-scroll"><table><thead><tr><th>Seção</th><th>Campo</th><th>Resposta</th></tr></thead><tbody>
+    {% for item in values %}<tr><td>{{ item.field.section }}</td><td><strong>{{ item.field.label }}</strong>{% if item.field.required %} *{% endif %}</td><td>{% if item.value %}{{ item.value }}{% else %}<span class="status danger">Não informado</span>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="3" class="empty">O candidato ainda não respondeu aos campos.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if admission.status == 'submitted' or admission.status == 'returned' %}
+  <h2>Decisão do RH</h2>
+  <form method="post" action="{% url 'admission_review' admission.id 'approve' %}">
+    {% csrf_token %}<input type="hidden" name="review_confirmed" value="1">
+    <label for="note">Observação da conferência</label><textarea id="note" name="note" rows="3" style="width:100%" placeholder="Registre a justificativa ou observação da análise"></textarea>
+    <p><button class="button primary" type="submit">Aprovar após conferência</button>
+      {% if admission.status == 'submitted' %}<button class="button secondary" type="submit" formaction="{% url 'admission_review' admission.id 'return' %}">Devolver para correção</button>{% endif %}
+      <button class="button danger" type="submit" formaction="{% url 'admission_review' admission.id 'cancel' %}">Cancelar processo</button>
+    </p>
+  </form>
+  {% endif %}
+  <a class="button secondary" href="{% url 'admission_list' %}">Voltar para a lista</a>
+</section>
+{% endblock %}

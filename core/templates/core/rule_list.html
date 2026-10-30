@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Regras administrativas — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Governança do cálculo</p><h1>Regras administrativas</h1><p class="subtitle">Versões publicadas são aplicadas aos eventos conforme a vigência.</p></div><form method="post" action="{% url 'calculation_run' %}">{% csrf_token %}<button class="button primary" type="submit">Executar cálculo da competência</button></form></div>
+<section class="card">
+  <div class="card-head"><div><h2>Catálogo de rubricas</h2><span class="muted-text">O que é o componente; a fórmula de cálculo é uma configuração separada.</span></div><a class="button primary" href="{% url 'rubric_create' %}">Nova rubrica</a></div>
+  <div class="notice-box"><strong>Cadastrar não gera pagamento</strong><p>Tipo, situação, vigência e ciclo previsto organizam o catálogo. Não ativam fórmulas, não criam botões no campo e não mudam os ciclos dos cálculos existentes. Use Informativa para referências que não devem gerar novo provento ou desconto.</p></div>
+  <div class="table-scroll"><table><thead><tr><th>Código / versão</th><th>Descrição</th><th>Tipo</th><th>Situação cadastral</th><th>Ciclo previsto</th><th>Vigência</th><th>Ação</th></tr></thead>
+    <tbody>{% for rubric in rubrics %}<tr>
+      <td>{{ rubric.code }} v{{ rubric.version }}</td><td>{{ rubric.name }}</td><td>{{ rubric.get_category_display }}</td>
+      <td>{% if rubric.active %}<span class="status success">Ativa</span>{% else %}<span class="status warning">Inativa</span>{% endif %}</td>
+      <td>{{ rubric.get_cycle_type_display }}</td><td>{{ rubric.effective_from|date:'d/m/Y' }}{% if rubric.effective_to %} até {{ rubric.effective_to|date:'d/m/Y' }}{% endif %}</td>
+      <td><a class="button small-button" href="{% url 'rubric_edit' rubric.id %}">Revisar</a></td>
+    </tr>{% empty %}<tr><td colspan="7" class="empty">Nenhuma rubrica cadastrada. Comece por Nova rubrica e consulte os exemplos do formulário.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <details><summary>Exemplos e diferença entre cadastro e cálculo</summary>
+    <p><strong>Frota:</strong> cadastrar como provento não define valor por limpeza ou por mês. O DP ainda precisa aprovar a regra.</p>
+    <p><strong>Pensão para conferência:</strong> use uma rubrica informativa sem pagamento quando o objetivo for apenas verificar o desconto já feito na folha.</p>
+    <p><strong>12h:</strong> o nome da rubrica identifica o pagamento; o valor por ocorrência está na regra de cálculo. Não altere a classificação para tentar mudar o valor.</p>
+    <p><strong>Combinado:</strong> é uma meta líquida informada pelo negócio. Cadastrar uma rubrica de provento não implementa essa garantia líquida.</p>
+  </details>
+</section>
+{% include 'core/application_catalog.html' %}
+<section class="card rules-card"><div class="card-head"><h2>Regras de cálculo legadas</h2><span class="tag">{{ rules|length }} regras</span></div><table><thead><tr><th>Regra</th><th>Evento</th><th>Escopo</th><th>Vigência</th><th>Status</th><th>Ação</th></tr></thead><tbody>{% for rule in rules %}<tr><td><strong>{{ rule.code }} v{{ rule.version }}</strong><small>{{ rule.name }}</small></td><td>{{ rule.get_event_type_display }}</td><td>{% if rule.unit %}{{ rule.unit.name }}{% elif rule.company %}{{ rule.company.legal_name }}{% else %}Todas as unidades{% endif %}</td><td>{{ rule.effective_from|date:'d/m/Y' }}{% if rule.effective_to %} até {{ rule.effective_to|date:'d/m/Y' }}{% else %} em diante{% endif %}</td><td><span class="status {% if rule.status == 'published' %}good{% elif rule.status == 'suspended' %}danger{% else %}warning{% endif %}">{{ rule.get_status_display }}</span></td><td>{% if rule.status == 'draft' or rule.status == 'review' %}<form method="post" action="{% url 'rule_publish' rule.id %}">{% csrf_token %}<button class="button small-button" type="submit">Publicar</button></form>{% else %}<span class="muted-text">{{ rule.approved_by|default:'—' }}</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="6" class="empty">Nenhuma regra legada cadastrada.</td></tr>{% endfor %}</tbody></table></section>
+<section class="card rule-note"><strong>Regras de cálculo — fluxo atual preservado</strong><p>O motor de eventos aceita regras publicadas para <b>diária</b>, <b>hora extra</b> e <b>Adicional 12h</b>. A composição mensal com chuva é tratada separadamente. Os parâmetros de cálculo continuam no Django Admin; este cadastro não implementa as fórmulas pendentes da matriz do DP. Cada resultado mantém a memória do cálculo aplicado.</p></section>
+{% endblock %}
