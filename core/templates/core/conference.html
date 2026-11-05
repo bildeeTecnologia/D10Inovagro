@@ -7,7 +7,7 @@
     <p class="eyebrow">Validação do DP</p>
     <h1>Conferência</h1>
     <p class="subtitle">Revise eventos, memória de cálculo e composição mensal antes de aprovar os pagamentos.</p>
-    <p id="conference-refresh-status" class="muted-text" role="status" aria-live="polite">Novos lançamentos serão verificados automaticamente a cada 30 segundos.</p>
+    <p id="conference-refresh-status" class="muted-text" role="status" aria-live="polite">Conectando às atualizações da Conferência. A lista continua disponível durante a conexão.</p>
   </div>
 </div>
 
@@ -42,6 +42,11 @@
   </form>
 </section>
 
+<div id="conference-realtime-config" hidden
+     data-token-url="{% url 'conference_realtime_token' %}"
+     data-competency="{{ selected_competency.id|default:'' }}"
+     data-unit="{{ selected_unit.id|default:'' }}"></div>
+
 <div id="conference-live-region">
   {% include 'core/partials/conference_events.html' %}
 </div>
@@ -70,4 +75,4 @@
   </div>
 </section>
 {% endblock %}
-{% block extra_scripts %}<script src="{% static 'conference-refresh.js' %}?v=1" defer></script>{% endblock %}
+{% block extra_scripts %}<script src="{% static 'conference-realtime.js' %}?v=1" defer></script>{% endblock %}

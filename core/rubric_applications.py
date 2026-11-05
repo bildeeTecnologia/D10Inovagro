@@ -27,7 +27,7 @@ def overlaps(queryset, start, end):
 def available_applications(tenant, units):
     return RubricApplication.objects.filter(
         tenant=tenant, unit__in=units, status="approved",
-        rubric__active=True, mode="event", leader_available=True,
+        rubric__active=True, mode__in=["event", "cumulative"], leader_available=True,
     ).select_related("rubric", "unit")
 
 
@@ -35,7 +35,7 @@ def validate_event_application(application, tenant, unit, collaborator, event_da
     if (
         application.tenant_id != tenant.pk or application.unit_id != unit.pk
         or collaborator.tenant_id != tenant.pk
-        or application.status != "approved" or application.mode != "event"
+        or application.status != "approved" or application.mode not in {"event", "cumulative"}
         or not application.leader_available or not application.rubric.active
     ):
         raise ValidationError("Regra indisponível para lançamento nesta unidade.")
@@ -43,8 +43,10 @@ def validate_event_application(application, tenant, unit, collaborator, event_da
         raise ValidationError("A regra não está vigente na data do evento.")
     if not collaborator.active or not unit.active:
         raise ValidationError("Unidade ou colaborador inativo para lançamento.")
-    if quantity != 1:
+    if application.mode == "event" and quantity != 1:
         raise ValidationError("Evento de valor fixo aceita somente uma ocorrência por lançamento.")
+    if application.mode == "cumulative" and quantity <= 0:
+        raise ValidationError("Bonificação cumulativa exige quantidade positiva.")
     if not EmploymentLink.objects.filter(
         collaborator=collaborator, company=unit.company, unit=unit,
         admission_date__lte=event_date,
@@ -204,12 +206,16 @@ def application_unit_ids(competency):
 def application_blockers(competency):
     sources, errors = application_sources(competency)
     for app, collaborator, agreement, event in sources:
-        entry = PaymentEntry.objects.filter(
+        entry_query = PaymentEntry.objects.filter(
             tenant=competency.tenant, cycle__competency=competency,
             cycle__cycle_type=app.cycle_type, rubric=app.rubric,
-            collaborator=collaborator, unit=app.unit, source_agreement=agreement,
-            source_event=event, amount=app.amount,
-        ).first()
+            collaborator=collaborator, unit=app.unit,
+        )
+        if app.mode == "cumulative":
+            entry_query = entry_query.filter(source_event__isnull=True, memory__application_id=app.pk)
+        else:
+            entry_query = entry_query.filter(source_agreement=agreement, source_event=event, amount=app.amount)
+        entry = entry_query.first()
         if not entry:
             errors.append(f"Rubrica {app.rubric.code}: geração pendente na competência.")
         elif app.cycle_type == "day10":
@@ -229,7 +235,19 @@ def generate_application_entries(competency, user):
     if errors:
         raise ValueError(" ".join(errors))
     entries = []
+    cumulative_groups = {}
     for app, collaborator, agreement, event in sources:
+        if app.mode == "cumulative":
+            key = (app.pk, collaborator.pk, app.unit_id)
+            group = cumulative_groups.setdefault(key, {"app": app, "collaborator": collaborator, "events": []})
+            group["events"].append(event)
+            continue
+        entries.extend(_generate_application_entry(competency, user, app, collaborator, agreement, event))
+
+    for group in cumulative_groups.values():
+        app = group["app"]
+        collaborator = group["collaborator"]
+        events = group["events"]
         first, last = period(competency)
         next_month = date(last.year + (last.month == 12), 1 if last.month == 12 else last.month + 1, 10)
         cycle, _ = PaymentCycle.objects.get_or_create(
@@ -244,16 +262,22 @@ def generate_application_entries(competency, user):
         if app.cycle_type == "day10" and cycle.payment_date is None:
             cycle.payment_date = next_month
             cycle.save(update_fields=["payment_date", "updated_at"])
+        PaymentEntry.objects.filter(
+            cycle=cycle, collaborator=collaborator, unit=app.unit, rubric=app.rubric,
+            source_event__isnull=True, memory__application_id=app.pk,
+        ).delete()
+        total_quantity = sum((event.quantity for event in events), 0)
+        total_amount = app.amount * total_quantity
         entry, _ = PaymentEntry.objects.update_or_create(
-            cycle=cycle, source_event=event, source_agreement=agreement,
+            cycle=cycle, source_event=None, source_agreement=None,
             collaborator=collaborator, unit=app.unit, rubric=app.rubric,
             defaults={
-                "tenant": competency.tenant, "amount": app.amount, "created_by": user, "status": "draft",
+                "tenant": competency.tenant, "amount": total_amount, "created_by": user, "status": "draft",
                 "memory": {
                     "source": "rubric_application", "application_id": app.pk,
-                    "agreement_id": agreement.pk if agreement else None,
-                    "event_id": event.pk if event else None,
-                    "mode": app.mode, "fixed_amount": str(app.amount),
+                    "event_ids": [event.pk for event in events],
+                    "mode": app.mode, "unit_amount": str(app.amount), "quantity": str(total_quantity),
+                    "fixed_amount": str(total_amount),
                     "competency": f"{competency.month:02d}/{competency.year}",
                     "payment_cycle": app.cycle_type, "proration": "not_supported",
                     "rubric_code": app.rubric.code, "rubric_name": app.rubric.name,
@@ -273,3 +297,40 @@ def generate_application_entries(competency, user):
         competency.status = "review"
         competency.save(update_fields=["status", "updated_at"])
     return entries
+
+
+def _generate_application_entry(competency, user, app, collaborator, agreement, event):
+    first, last = period(competency)
+    next_month = date(last.year + (last.month == 12), 1 if last.month == 12 else last.month + 1, 10)
+    cycle, _ = PaymentCycle.objects.get_or_create(
+        tenant=competency.tenant, competency=competency, cycle_type=app.cycle_type,
+        defaults={"created_by": user, "payment_date": next_month if app.cycle_type == "day10" else None},
+    )
+    cycle = PaymentCycle.objects.select_for_update().get(pk=cycle.pk)
+    if cycle.status in {"approved", "closed"}:
+        raise ValueError("Ciclo aprovado/fechado impede geração de rubricas.")
+    if app.cycle_type == "day10" and cycle.payment_date and cycle.payment_date != next_month:
+        raise ValueError("O ciclo dia 10 possui data incompatível com o mês seguinte à competência. Revise o ciclo antes de gerar.")
+    if app.cycle_type == "day10" and cycle.payment_date is None:
+        cycle.payment_date = next_month
+        cycle.save(update_fields=["payment_date", "updated_at"])
+    entry, _ = PaymentEntry.objects.update_or_create(
+        cycle=cycle, source_event=event, source_agreement=agreement,
+        collaborator=collaborator, unit=app.unit, rubric=app.rubric,
+        defaults={
+            "tenant": competency.tenant, "amount": app.amount, "created_by": user, "status": "draft",
+            "memory": {
+                "source": "rubric_application", "application_id": app.pk,
+                "agreement_id": agreement.pk if agreement else None,
+                "event_id": event.pk if event else None,
+                "mode": app.mode, "fixed_amount": str(app.amount),
+                "competency": f"{competency.month:02d}/{competency.year}",
+                "payment_cycle": app.cycle_type, "proration": "not_supported",
+                "rubric_code": app.rubric.code, "rubric_name": app.rubric.name,
+                "instructions": app.instructions,
+                "effective_from": (agreement.effective_from if agreement else app.effective_from).isoformat(),
+                "effective_to": str(agreement.effective_to if agreement else app.effective_to),
+            },
+        },
+    )
+    return [entry]

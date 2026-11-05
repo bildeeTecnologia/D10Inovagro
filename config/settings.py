@@ -28,6 +28,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
 DEBUG = os.getenv('DJANGO_DEBUG', '1' if not DATABASE_URL else '0') == '1'
+SUPABASE_REALTIME_URL = os.getenv('SUPABASE_REALTIME_URL', os.getenv('NEXT_PUBLIC_SUPABASE_URL', '')).strip().rstrip('/')
+SUPABASE_PUBLISHABLE_KEY = os.getenv('SUPABASE_PUBLISHABLE_KEY', os.getenv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', '')).strip()
+SUPABASE_REALTIME_SIGNING_PRIVATE_KEY = os.getenv('SUPABASE_REALTIME_SIGNING_PRIVATE_KEY', '').replace('\\n', '\n').strip()
+SUPABASE_REALTIME_SIGNING_KEY_ID = os.getenv('SUPABASE_REALTIME_SIGNING_KEY_ID', '').strip()
+SUPABASE_REALTIME_ISSUER = os.getenv(
+    'SUPABASE_REALTIME_ISSUER',
+    f"{SUPABASE_REALTIME_URL}/auth/v1" if SUPABASE_REALTIME_URL else '',
+).strip()
 if DATABASE_URL and DEBUG and os.getenv('DJANGO_ALLOW_INSECURE_DEBUG') != '1':
     raise ImproperlyConfigured('Não use DJANGO_DEBUG=1 com DATABASE_URL sem habilitar explicitamente o modo inseguro.')
 
@@ -118,7 +126,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 if DATABASE_URL:
-    DATABASES = {'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600, ssl_require=True)}
+    DATABASE_POOL = os.getenv('DATABASE_POOL', '1') == '1' and DATABASE_URL.startswith(('postgres://', 'postgresql://'))
+    DATABASES = {'default': dj_database_url.parse(DATABASE_URL, conn_max_age=0 if DATABASE_POOL else 600, ssl_require=not DATABASE_URL.startswith('sqlite://'))}
+    if DATABASE_POOL:
+        # Reaproveita conexões entre requisições (inclusive no runserver, que cria uma thread por requisição);
+        # sem isso cada página paga um novo handshake TLS com o banco.
+        DATABASES['default']['OPTIONS'] = {**DATABASES['default'].get('OPTIONS', {}), 'pool': {'min_size': 1, 'max_size': 4, 'timeout': 20}}
 else:
     DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3'}}
 

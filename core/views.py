@@ -10,8 +10,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction, models
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .forms import FieldEventForm
@@ -34,8 +36,9 @@ from io import BytesIO
 from django.http import FileResponse, Http404
 from .models import Rubric
 from .rubric_forms import RubricForm
+from .competency_forms import CompetencyForm
 from .rubric_applications import available_applications
-from .access import capability_required, navigation_access, tenant_for_user as _tenant_for_user
+from .access import capability_required, navigation_access, tenant_for_user as _tenant_for_user, user_roles, user_scopes
 from .navigation import AREAS, available_tools
 from .event_cost_dashboard import build_event_cost_dashboard
 
@@ -56,7 +59,7 @@ def workspace_area(request, area_slug):
 def _allowed_units_for_user(user, tenant):
     if not tenant:
         return tenant.units.none() if tenant else []
-    scopes = list(user.scopes.filter(tenant=tenant).select_related("company", "unit"))
+    scopes = [scope for scope in user_scopes(user) if scope.tenant_id == tenant.pk]
     if user.is_superuser or any(scope.role == "platform" and not scope.unit_id for scope in scopes):
         return tenant.units.filter(active=True)
     unit_ids = [scope.unit_id for scope in scopes if scope.unit_id]
@@ -84,12 +87,17 @@ def dashboard(request):
     if not tenant:
         return render(request, "core/empty_state.html", {"title": "Nenhum cliente configurado"})
     competency = tenant.competencies.order_by("-year", "-month").first()
-    units = _allowed_units_for_user(request.user, tenant)
+    units = list(
+        _allowed_units_for_user(request.user, tenant)
+        .annotate(dashboard_event_count=Count("events", filter=Q(events__tenant=tenant)))
+    )
     events = tenant.events.filter(unit__in=units).select_related("unit", "collaborator", "competency").order_by("-event_date", "-created_at")[:8]
     context = {
         "tenant": tenant,
         "competency": competency,
         "units": units,
+        "company_count": tenant.companies.count(),
+        "unit_count": len(units),
         "events": events,
         "event_count": tenant.events.filter(unit__in=units).count(),
         "pending_count": tenant.events.filter(unit__in=units, status="pending").count(),
@@ -223,7 +231,7 @@ def event_calendar(request):
 
 
 def _can_manage_rules(user, tenant):
-    return user.is_superuser or user.scopes.filter(tenant=tenant, role__in=["dp", "platform"]).exists()
+    return user.is_superuser or bool(user_roles(user, tenant).intersection(["dp", "platform"]))
 
 
 @login_required
@@ -376,11 +384,11 @@ def calculation_run(request):
 
 
 def _can_review(user, tenant):
-    return user.is_superuser or user.scopes.filter(tenant=tenant, role__in=["dp", "management", "platform"]).exists()
+    return user.is_superuser or bool(user_roles(user, tenant).intersection(["dp", "management", "platform"]))
 
 
 def _can_close(user, tenant):
-    return user.is_superuser or user.scopes.filter(tenant=tenant, role__in=["management", "platform"]).exists()
+    return user.is_superuser or bool(user_roles(user, tenant).intersection(["management", "platform"]))
 
 
 def _invalidate_approved_payment_cycles(competency, user, reason):
@@ -439,10 +447,8 @@ def conference(request):
     if selected_unit:
         scoped_events = scoped_events.filter(unit=selected_unit)
         monthly_results = monthly_results.filter(unit=selected_unit)
-    event_counts = {
-        event_status: scoped_events.filter(status=event_status).count()
-        for event_status in ("pending", "approved", "rejected")
-    }
+    status_totals = dict(scoped_events.order_by().values_list("status").annotate(total=Count("id")))
+    event_counts = {event_status: status_totals.get(event_status, 0) for event_status in ("pending", "approved", "rejected")}
     events = scoped_events
     if status in valid_statuses:
         events = events.filter(status=status)
@@ -460,6 +466,7 @@ def conference(request):
         "units": units,
         "selected_unit": selected_unit,
         "selected_status": status,
+        "return_url": request.get_full_path(),
         "status_choices": [("all", "Todos os status"), *FieldEvent.STATUS_CHOICES],
         "can_review": _can_review(request.user, tenant) if tenant else False,
         "pending_count": event_counts["pending"],
@@ -471,6 +478,14 @@ def conference(request):
         response["Cache-Control"] = "private, no-store"
         return response
     return render(request, "core/conference.html", context)
+
+
+def _conference_redirect(request):
+    """Volta à Conferência mantendo os filtros em que o analista estava trabalhando."""
+    target = request.POST.get("next", "")
+    if target.startswith("/conferencia/") and url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return redirect(target)
+    return redirect("conference")
 
 
 @login_required
@@ -485,12 +500,12 @@ def conference_decision(request, event_id, decision):
     reason = request.POST.get("reason", "").strip()
     if len(reason) < 5:
         messages.error(request, "Informe uma justificativa com pelo menos 5 caracteres.")
-        return redirect("conference")
+        return _conference_redirect(request)
     with transaction.atomic():
         competency = tenant.competencies.select_for_update().get(id=event_stub.competency_id)
         if competency.status == "closed":
             messages.error(request, "A competência está fechada. Solicite reabertura autorizada antes de alterar o evento.")
-            return redirect("conference")
+            return _conference_redirect(request)
         event = tenant.events.select_for_update().filter(
             id=event_id,
             unit__in=allowed_units,
@@ -499,7 +514,7 @@ def conference_decision(request, event_id, decision):
         ).first()
         if not event:
             messages.error(request, "O evento já foi alterado ou não está mais pendente; atualize a conferência.")
-            return redirect("conference")
+            return _conference_redirect(request)
         event.competency = competency
         event.status = "approved" if decision == "approve" else "rejected"
         event.approved_by = request.user
@@ -524,7 +539,7 @@ def conference_decision(request, event_id, decision):
     if invalidated_cycles:
         messages.warning(request, "A decisão foi registrada; ciclos de pagamento anteriormente aprovados voltaram para conferência.")
     messages.success(request, f"Evento {event.get_status_display().lower()} com sucesso.")
-    return redirect("conference")
+    return _conference_redirect(request)
 
 
 @login_required
@@ -533,7 +548,10 @@ def closing(request):
     tenant = _tenant_for_user(request.user)
     if not tenant:
         return render(request, "core/empty_state.html", {"title": "Nenhum cliente configurado"})
-    competencies = tenant.competencies.all()
+    competencies = list(tenant.competencies.all())
+    for competency in competencies:
+        status_issue = _competency_status_issue(competency) if competency.status != "review" else None
+        competency.issues = [] if competency.status == "closed" else [i for i in [status_issue] if i] + _competency_closing_issues(competency)
     can_close = _can_close(request.user, tenant)
     return render(request, "core/closing.html", {"tenant": tenant, "competencies": competencies, "can_close": can_close})
 
@@ -543,93 +561,162 @@ def close_competency(request, competency_id, action):
     tenant = _tenant_for_user(request.user)
     if request.method != "POST" or not tenant or not _can_close(request.user, tenant):
         return render(request, "core/empty_state.html", {"title": "Ação não autorizada"}, status=403)
-    competency = tenant.competencies.get(id=competency_id)
+    competency = get_object_or_404(tenant.competencies, id=competency_id)
     reason = request.POST.get("reason", "").strip()
     if len(reason) < 5:
         messages.error(request, "Informe uma justificativa com pelo menos 5 caracteres.")
         return redirect("closing")
+    label = f"{competency.month:02d}/{competency.year}"
     if action == "close":
         with transaction.atomic():
             competency = tenant.competencies.select_for_update().get(id=competency_id)
-            blockers = _competency_closing_blockers(competency)
-            if blockers:
-                messages.error(request, "Fechamento bloqueado: " + " ".join(blockers))
-            elif competency.status != "review":
-                messages.error(request, "Somente competências em conferência podem ser fechadas.")
+            status_issue = _competency_status_issue(competency) if competency.status != "review" else None
+            issues = [i for i in [status_issue] if i] + _competency_closing_issues(competency)
+            if issues:
+                messages.error(request, f"Não foi possível fechar {label}: {len(issues)} pendência(s). Veja abaixo o que resolver e onde.")
             else:
                 competency.close()
                 _audit(tenant=tenant, user=request.user, action="close", entity="competency", entity_id=competency.id, after={"status": competency.status}, reason=reason)
-                messages.success(request, "Competência fechada e protegida contra alterações diretas.")
+                messages.success(request, f"Competência {label} fechada e protegida contra alterações diretas.")
     elif action == "reopen":
         with transaction.atomic():
             competency = tenant.competencies.select_for_update().get(id=competency_id)
             if competency.status != "closed":
-                messages.error(request, "Somente competências fechadas podem ser reabertas.")
+                messages.error(request, f"{label} não está fechada; só competências fechadas podem ser reabertas.")
             else:
                 competency.status = "review"
                 competency.closed_at = None
                 competency.save(update_fields=["status", "closed_at", "updated_at"])
                 _invalidate_approved_payment_cycles(competency, request.user, reason)
                 _audit(tenant=tenant, user=request.user, action="update", entity="competency", entity_id=competency.id, after={"status": competency.status}, reason=reason)
-                messages.success(request, "Competência reaberta com auditoria.")
+                messages.success(request, f"Competência {label} reaberta com auditoria.")
     return redirect("closing")
 
 
-def _competency_calculation_blockers(competency):
-    blockers = []
-    events = competency.events.all()
-    if events.filter(status__in=["draft", "pending"]).exists():
-        blockers.append("Existem eventos em rascunho ou pendentes de conferência.")
+def _issue(message, action, url_name, query=""):
+    """Pendência do fechamento: o que está errado, o que fazer e onde fazer."""
+    return {"message": message, "action": action, "url": reverse(url_name) + query}
 
-    approved_events = events.filter(status="approved").select_related("collaborator", "unit")
-    calculated_event_ids = set(CalculationResult.objects.filter(event__in=approved_events).values_list("event_id", flat=True))
+
+def _sample(names, limit=3):
+    names = sorted(set(names))
+    text = ", ".join(names[:limit])
+    return f"{text} e mais {len(names) - limit}" if len(names) > limit else text
+
+
+def _current_competency(tenant):
+    """Competência que recebe os lançamentos novos (a mais recente aberta ou em conferência)."""
+    return tenant.competencies.filter(status__in=["open", "review"]).order_by("-year", "-month").first()
+
+
+def _competency_calculation_issues(competency, events=None):
+    issues = []
+    if events is None:
+        events = list(competency.events.select_related("collaborator", "unit"))
+    open_events = [event for event in events if event.status in {"draft", "pending"}]
+    if open_events:
+        totals = {}
+        for event in open_events:
+            totals[event.unit.name] = totals.get(event.unit.name, 0) + 1
+        by_unit = ", ".join(f"{name} ({total})" for name, total in sorted(totals.items()))
+        issues.append(_issue(
+            f"{len(open_events)} evento(s) em rascunho ou pendentes de conferência: {by_unit}.",
+            "Aprove ou rejeite cada evento na Conferência (já filtrada nesta competência).",
+            "conference", f"?competency={competency.id}&status=pending",
+        ))
+
+    approved_events = [event for event in events if event.status == "approved"]
+    calculated_event_ids = set(CalculationResult.objects.filter(competency=competency).values_list("event_id", flat=True))
     missing_calculations = [
         event for event in approved_events
         if event.event_type not in {"rain_release", "rubric", "occurrence", "advance"} and event.id not in calculated_event_ids
     ]
     if missing_calculations:
-        blockers.append(f"{len(missing_calculations)} evento(s) aprovado(s) sem cálculo.")
+        who = _sample(f"{event.collaborator.name} ({event.get_event_type_display()}, {event.event_date:%d/%m})" for event in missing_calculations)
+        issues.append(_issue(
+            f"{len(missing_calculations)} evento(s) aprovado(s) sem cálculo: {who}.",
+            "Execute o cálculo da competência em Regras. Se o erro persistir, publique a regra de cálculo do tipo de evento.",
+            "rule_list",
+        ))
 
-    pairs = set(approved_events.exclude(event_type__in=["rubric", "occurrence", "advance"]).values_list("collaborator_id", "unit_id"))
+    pairs = {(event.collaborator_id, event.unit_id) for event in approved_events if event.event_type not in {"rubric", "occurrence", "advance"}}
     calculated_pairs = set(
         MonthlyCompensationResult.objects.filter(competency=competency)
         .values_list("collaborator_id", "unit_id")
     )
-    if pairs - calculated_pairs:
-        blockers.append(f"{len(pairs - calculated_pairs)} composição(ões) mensal(is) sem resultado.")
+    missing_pairs = pairs - calculated_pairs
+    if missing_pairs:
+        missing_ids = {collaborator_id for collaborator_id, _ in missing_pairs}
+        names = [event.collaborator.name for event in approved_events if event.collaborator_id in missing_ids]
+        issues.append(_issue(
+            f"{len(missing_pairs)} composição(ões) mensal(is) sem resultado: {_sample(names)}.",
+            "Execute o cálculo da competência em Regras e confira se o colaborador tem salário vigente cadastrado.",
+            "rule_list",
+        ))
     from .rubric_applications import application_blockers
-    blockers.extend(application_blockers(competency))
-    return blockers
+    for message in application_blockers(competency):
+        issues.append(_issue(message, "Gere as rubricas da competência na tela de Regras.", "rule_list"))
+    return issues
 
 
-def _competency_closing_blockers(competency):
-    blockers = _competency_calculation_blockers(competency)
-    approved_events = competency.events.filter(status="approved")
+def _competency_closing_issues(competency):
+    events = list(competency.events.select_related("collaborator", "unit"))
+    issues = _competency_calculation_issues(competency, events)
+    approved_events = [event for event in events if event.status == "approved"]
     required_cycle_types = set()
-    if approved_events.exclude(event_type__in=["rubric", "occurrence", "advance"]).exists():
+    if any(event.event_type not in {"rubric", "occurrence", "advance"} for event in approved_events):
         required_cycle_types.add("monthly")
-    if approved_events.filter(event_type="additional_12h").exists():
+    if any(event.event_type == "additional_12h" for event in approved_events):
         required_cycle_types.add("day10")
     from .rubric_applications import application_sources
     sources, _ = application_sources(competency)
     required_cycle_types.update(app.cycle_type for app, *_ in sources)
 
-    for cycle_type in required_cycle_types:
+    for cycle_type in sorted(required_cycle_types):
         cycle = PaymentCycle.objects.filter(competency=competency, cycle_type=cycle_type).first()
         label = "mensal" if cycle_type == "monthly" else "do dia 10"
         if not cycle:
-            blockers.append(f"O ciclo {label} ainda não foi gerado.")
+            issues.append(_issue(f"O ciclo {label} ainda não foi gerado.", "Execute o cálculo da competência em Regras para gerar o ciclo.", "rule_list"))
             continue
         if cycle.status != "approved":
-            blockers.append(f"O ciclo {label} ainda não foi aprovado.")
+            issues.append(_issue(f"O ciclo {label} ainda não foi aprovado.", "Revise e aprove o ciclo em Pagamentos.", "payment_cycles"))
         if not cycle.entries.exists():
-            blockers.append(f"O ciclo {label} não possui lançamentos.")
+            issues.append(_issue(f"O ciclo {label} não possui lançamentos.", "Execute o cálculo em Regras; sem lançamentos o ciclo não pode ser aprovado.", "rule_list"))
         elif cycle.entries.exclude(status="approved").exists():
-            blockers.append(f"O ciclo {label} contém lançamentos não aprovados.")
+            issues.append(_issue(f"O ciclo {label} contém lançamentos não aprovados.", "Aprove o ciclo em Pagamentos.", "payment_cycles"))
 
-    if PaymentCycle.objects.filter(competency=competency).exclude(status="approved").exists():
-        blockers.append("Há ciclos de pagamento não aprovados.")
-    return blockers
+    if PaymentCycle.objects.filter(competency=competency).exclude(status="approved").exists() and not any("ciclo" in issue["message"] for issue in issues):
+        issues.append(_issue("Há ciclos de pagamento não aprovados.", "Revise e aprove os ciclos em Pagamentos.", "payment_cycles"))
+    return issues
+
+
+def _competency_status_issue(competency):
+    """Pré-requisito de status: só competências em conferência podem ser fechadas."""
+    label = f"{competency.month:02d}/{competency.year}"
+    if competency.status == "open":
+        current = _current_competency(competency.tenant)
+        if current and current.pk != competency.pk:
+            return _issue(
+                f"{label} está Aberta e não é a competência corrente: o cálculo e os lançamentos usam {current.month:02d}/{current.year}.",
+                "Se ela foi criada por engano, exclua-a em Configurações (só é possível sem lançamentos); caso contrário, conclua antes a competência corrente.",
+                "settings_page",
+            )
+        return _issue(
+            f"{label} ainda está Aberta: o cálculo não foi executado.",
+            "Execute o cálculo da competência em Regras para colocá-la em conferência.",
+            "rule_list",
+        )
+    if competency.status == "closed":
+        return _issue(f"{label} já está fechada.", "Para alterar, reabra a competência com justificativa.", "closing")
+    return None
+
+
+def _competency_calculation_blockers(competency):
+    return [issue["message"] for issue in _competency_calculation_issues(competency)]
+
+
+def _competency_closing_blockers(competency):
+    return [issue["message"] for issue in _competency_closing_issues(competency)]
 
 
 EVENT_COST_STATUS_CHOICES = [
@@ -747,11 +834,111 @@ def report_export(request, file_format):
     return response_file(create_pdf(report_type, rows, inconsistencies, metadata), "application/pdf", filename)
 
 
+COMPETENCY_DEPENDENCY_LABELS = {
+    "fieldevent": "lançamentos de campo",
+    "paymentcycle": "ciclos de pagamento",
+    "calculationresult": "resultados de cálculo",
+    "monthlycompensationresult": "composições mensais",
+    "importbatch": "importações",
+    "communicationthread": "conversas de comunicação",
+    "dataqualityissue": "inconsistências de qualidade",
+}
+
+
+def _competencies_dependencies(competencies):
+    """Registros que impedem excluir cada competência: {id: [("lançamentos de campo", 3)]}, com uma consulta por tabela."""
+    found = {competency.pk: [] for competency in competencies}
+    for relation in Competency._meta.related_objects:
+        totals = (
+            relation.related_model._default_manager
+            .filter(**{f"{relation.field.name}__in": list(found)})
+            .order_by().values_list(relation.field.name).annotate(total=Count("pk"))
+        )
+        label = COMPETENCY_DEPENDENCY_LABELS.get(relation.related_model._meta.model_name, str(relation.related_model._meta.verbose_name_plural))
+        for competency_id, total in totals:
+            found[competency_id].append((label, total))
+    return found
+
+
+def _competency_dependencies(competency):
+    return _competencies_dependencies([competency])[competency.pk]
+
+
+def _settings_context(request, tenant, competency_form=None):
+    scopes = [scope for scope in user_scopes(request.user) if scope.tenant_id == tenant.pk] if tenant else []
+    can_manage = bool(tenant and _can_manage_rules(request.user, tenant))
+    context = {"tenant": tenant, "scopes": scopes, "can_manage_competencies": can_manage}
+    if can_manage:
+        competencies = list(tenant.competencies.all())
+        current = next((item for item in competencies if item.status in {"open", "review"}), None)
+        dependencies = _competencies_dependencies(competencies)
+        for competency in competencies:
+            competency.is_current = bool(current and current.pk == competency.pk)
+            competency.dependencies = dependencies[competency.pk]
+            competency.can_delete = competency.status == "open" and not competency.dependencies
+        context.update(
+            competencies=competencies,
+            current_competency=current,
+            competency_form=competency_form or CompetencyForm(tenant=tenant),
+        )
+    return context
+
+
 @login_required
 def settings_page(request):
     tenant = _tenant_for_user(request.user)
-    scopes = request.user.scopes.filter(tenant=tenant).select_related("company", "unit") if tenant else []
-    return render(request, "core/settings.html", {"tenant": tenant, "scopes": scopes})
+    return render(request, "core/settings.html", _settings_context(request, tenant))
+
+
+@login_required
+@require_POST
+def competency_delete(request, competency_id):
+    tenant = _tenant_for_user(request.user)
+    if not tenant or not _can_manage_rules(request.user, tenant):
+        return render(request, "core/empty_state.html", {"title": "Acesso restrito às competências"}, status=403)
+    with transaction.atomic():
+        competency = get_object_or_404(tenant.competencies.select_for_update(), id=competency_id)
+        label = f"{competency.month:02d}/{competency.year}"
+        dependencies = _competency_dependencies(competency)
+        if competency.status != "open":
+            messages.error(request, f"{label} está {competency.get_status_display().lower()} e não pode ser excluída; apenas competências abertas e sem movimentação.")
+        elif dependencies:
+            found = ", ".join(f"{count} {name}" for name, count in dependencies)
+            messages.error(request, f"{label} não pode ser excluída: já possui {found}. Esses registros fazem parte do histórico auditável da folha.")
+        else:
+            before = {"year": competency.year, "month": competency.month, "status": competency.status}
+            entity_id = competency.pk
+            competency.delete()
+            _audit(
+                tenant=tenant, user=request.user, action="delete", entity="competency", entity_id=entity_id,
+                before=before, reason="Competência aberta e sem movimentação excluída pela tela de Configurações.",
+            )
+            messages.success(request, f"Competência {label} excluída.")
+    return redirect("settings_page")
+
+
+@login_required
+@require_POST
+def competency_create(request):
+    tenant = _tenant_for_user(request.user)
+    if not tenant or not _can_manage_rules(request.user, tenant):
+        return render(request, "core/empty_state.html", {"title": "Acesso restrito às competências"}, status=403)
+    form = CompetencyForm(request.POST, tenant=tenant)
+    if not form.is_valid():
+        return render(request, "core/settings.html", _settings_context(request, tenant, form), status=400)
+    with transaction.atomic():
+        competency = form.save()
+        _audit(
+            tenant=tenant,
+            user=request.user,
+            action="create",
+            entity="competency",
+            entity_id=competency.pk,
+            after={"year": competency.year, "month": competency.month, "status": "open"},
+            reason="Competência criada com status inicial aberto pela tela de Configurações.",
+        )
+    messages.success(request, f"Competência {competency.month:02d}/{competency.year} criada.")
+    return redirect("settings_page")
 
 
 @login_required
@@ -840,11 +1027,11 @@ def payment_cycle_approve(request, cycle_id):
 
 
 def _can_import(user, tenant):
-    return user.is_superuser or user.scopes.filter(tenant=tenant, role__in=["dp", "platform", "management"]).exists()
+    return user.is_superuser or bool(user_roles(user, tenant).intersection(["dp", "platform", "management"]))
 
 
 def _can_admission(user, tenant):
-    return user.is_superuser or user.scopes.filter(tenant=tenant, role__in=["dp", "platform", "management"]).exists()
+    return user.is_superuser or bool(user_roles(user, tenant).intersection(["dp", "platform", "management"]))
 
 
 def _ensure_admission_fields(tenant):

@@ -42,6 +42,32 @@ class Company(TimeStampedModel):
         return f"{self.legal_name} ({self.cnpj})"
 
 
+class MonthlyBaseConfiguration(TimeStampedModel):
+    BASE_CHOICES = [("fixed_30", "30 dias fixos"), ("calendar_days", "Dias reais da competência")]
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="monthly_base_configurations")
+    base_type = models.CharField(max_length=20, choices=BASE_CHOICES, default="fixed_30")
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    reason = models.TextField()
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_monthly_base_configurations")
+
+    class Meta:
+        ordering = ["company__legal_name", "-effective_from", "-created_at"]
+        indexes = [models.Index(fields=["company", "effective_from", "effective_to"])]
+
+    def clean(self):
+        super().clean()
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValidationError("A vigência final não pode ser anterior à inicial.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.company.legal_name} — {self.get_base_type_display()} — {self.effective_from:%d/%m/%Y}"
+
+
 class Unit(TimeStampedModel):
     tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name="units")
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="units")
@@ -363,7 +389,7 @@ class FieldEvent(TimeStampedModel):
 
 
 class AuditLog(models.Model):
-    ACTION_CHOICES = [("create", "Criação"), ("update", "Alteração"), ("approve", "Aprovação"), ("close", "Fechamento"), ("export", "Exportação"), ("access", "Acesso")]
+    ACTION_CHOICES = [("create", "Criação"), ("update", "Alteração"), ("delete", "Exclusão"), ("approve", "Aprovação"), ("close", "Fechamento"), ("export", "Exportação"), ("access", "Acesso")]
     tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name="audit_logs")
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT)
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)
@@ -478,7 +504,7 @@ class PaymentEntry(TimeStampedModel):
 
 
 class RubricApplication(TimeStampedModel):
-    MODE_CHOICES = [("recurring", "Valor mensal fixo"), ("event", "Valor fixo por ocorrência"), ("informative", "Somente conferência")]
+    MODE_CHOICES = [("recurring", "Valor mensal fixo"), ("event", "Valor fixo por ocorrência"), ("cumulative", "Valor cumulativo por ocorrência"), ("informative", "Somente conferência")]
     STATUS_CHOICES = [("draft", "Rascunho"), ("approved", "Aprovada")]
     tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name="rubric_applications")
     rubric = models.ForeignKey(Rubric, on_delete=models.PROTECT, related_name="applications")
@@ -509,14 +535,14 @@ class RubricApplication(TimeStampedModel):
             if self.mode == "informative":
                 if self.rubric.category != "informative" or self.cycle_type != "none" or self.amount is not None:
                     raise ValidationError("Conferência exige rubrica informativa, sem valor de pagamento e ciclo sem pagamento.")
-            elif self.mode in {"recurring", "event"}:
+            elif self.mode in {"recurring", "event", "cumulative"}:
                 if self.rubric.category != "earning":
                     raise ValidationError("Nesta etapa, geração financeira aceita somente proventos. Descontos exigem fluxo próprio.")
                 if self.cycle_type not in {"monthly", "day10"} or self.amount is None or self.amount <= 0:
                     raise ValidationError("Informe valor fixo positivo e ciclo mensal ou dia 10.")
                 if self.rubric.cycle_type not in {"both", self.cycle_type}:
                     raise ValidationError("O ciclo da regra deve ser compatível com o cadastro da rubrica.")
-            if self.leader_available and self.mode != "event":
+            if self.leader_available and self.mode not in {"event", "cumulative"}:
                 raise ValidationError("Somente regras por ocorrência podem aparecer no painel do líder.")
             from .payments import DEFAULT_RUBRIC_DEFINITIONS
             if self.rubric.code in {item[0] for item in DEFAULT_RUBRIC_DEFINITIONS}:

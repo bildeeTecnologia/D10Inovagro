@@ -29,11 +29,13 @@
     <div class="review-actions">
       <form method="post" action="{% url 'conference_decision' event.id 'approve' %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ return_url }}">
         <input name="reason" placeholder="Justificativa" required minlength="5">
         <button class="button small-button" type="submit">Aprovar</button>
       </form>
       <form method="post" action="{% url 'conference_decision' event.id 'reject' %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ return_url }}">
         <input name="reason" placeholder="Motivo da rejeição" required minlength="5">
         <button class="button small-button danger-button" type="submit">Rejeitar</button>
       </form>

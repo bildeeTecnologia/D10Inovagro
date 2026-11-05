@@ -5,7 +5,7 @@ from django.core.exceptions import PermissionDenied
 
 from .admin_forms import FieldEventAdminForm, UserScopeAdminForm
 from .models import CollaboratorRubric, RubricApplication
-from .models import AdmissionFieldDefinition, AdmissionFieldValue, AdmissionRequest, AuditLog, CalculationResult, CalculationRule, Collaborator, Company, CommunicationMessage, CommunicationThread, Competency, CompensationVersion, DataQualityIssue, EmploymentLink, FieldEvent, ImportBatch, MonthlyCompensationResult, Notification, PaymentCycle, PaymentEntry, ReportEmission, Rubric, Tenant, Unit, UserScope
+from .models import AdmissionFieldDefinition, AdmissionFieldValue, AdmissionRequest, AuditLog, CalculationResult, CalculationRule, Collaborator, Company, CommunicationMessage, CommunicationThread, Competency, CompensationVersion, DataQualityIssue, EmploymentLink, FieldEvent, ImportBatch, MonthlyBaseConfiguration, MonthlyCompensationResult, Notification, PaymentCycle, PaymentEntry, ReportEmission, Rubric, Tenant, Unit, UserScope
 
 class ImmutableWorkflowAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
@@ -29,6 +29,19 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ("legal_name", "cnpj", "tenant", "active")
     list_filter = ("tenant", "active")
     search_fields = ("legal_name", "cnpj")
+
+
+@admin.register(MonthlyBaseConfiguration)
+class MonthlyBaseConfigurationAdmin(admin.ModelAdmin):
+    list_display = ("company", "base_type", "effective_from", "effective_to", "created_by")
+    list_filter = ("company", "base_type")
+    search_fields = ("company__legal_name", "company__cnpj")
+    readonly_fields = ("created_at", "updated_at")
+
+    def save_model(self, request, obj, form, change):
+        if not obj.created_by_id:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Unit)

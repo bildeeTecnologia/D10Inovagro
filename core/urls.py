@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 from . import application_views
 from .api import sync_events
+from .realtime_auth import conference_realtime_token
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
@@ -25,12 +26,15 @@ urlpatterns = [
     path("regras/<int:rule_id>/publicar/", views.rule_publish, name="rule_publish"),
     path("calculo/executar/", views.calculation_run, name="calculation_run"),
     path("conferencia/", views.conference, name="conference"),
+    path("api/v1/realtime/conference-token/", conference_realtime_token, name="conference_realtime_token"),
     path("conferencia/<int:event_id>/<str:decision>/", views.conference_decision, name="conference_decision"),
     path("fechamento/", views.closing, name="closing"),
     path("fechamento/<int:competency_id>/<str:action>/", views.close_competency, name="close_competency"),
     path("relatorios/", views.reports, name="reports"),
     path("relatorios/exportar/<str:file_format>/", views.report_export, name="report_export"),
     path("configuracoes/", views.settings_page, name="settings_page"),
+    path("configuracoes/competencias/nova/", views.competency_create, name="competency_create"),
+    path("configuracoes/competencias/<int:competency_id>/excluir/", views.competency_delete, name="competency_delete"),
     path("saude/", views.health_dashboard, name="health_dashboard"),
     path("pagamentos/", views.payment_cycles, name="payment_cycles"),
     path("pagamentos/<int:cycle_id>/aprovar/", views.payment_cycle_approve, name="payment_cycle_approve"),

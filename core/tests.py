@@ -11,8 +11,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook
 from reportlab.pdfgen import canvas
 
-from .models import AdmissionRequest, CalculationResult, CalculationRule, Collaborator, Company, CompensationVersion, Competency, DataQualityIssue, EmploymentLink, FieldEvent, ImportBatch, MonthlyCompensationResult, PaymentCycle, PaymentEntry, ReportEmission, Rubric, Tenant, Unit, UserScope
-from .models import AuditLog
+from .models import AdmissionRequest, CalculationResult, CalculationRule, Collaborator, Company, CompensationVersion, Competency, DataQualityIssue, EmploymentLink, FieldEvent, ImportBatch, MonthlyBaseConfiguration, MonthlyCompensationResult, PaymentCycle, PaymentEntry, ReportEmission, Rubric, Tenant, Unit, UserScope
+from .models import AuditLog, RubricApplication
 from .compensation import calculate_monthly_compensation
 from .calculation import calculate_event
 from .payments import ensure_default_rubrics, generate_day10_entries, generate_monthly_entries
@@ -279,10 +279,23 @@ class FieldBackendTests(TestCase):
 
     def test_dashboard_does_not_expose_other_unit(self):
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
+        competency = Competency.objects.get(tenant=self.tenant)
+        FieldEvent.objects.create(
+            tenant=self.tenant, competency=competency, unit=self.unit_allowed,
+            collaborator=self.person_allowed, event_type="daily", event_date=date(2026, 10, 1),
+            quantity=1, reason="Evento sintético permitido", created_by=self.user, idempotency_key=uuid.uuid4(),
+        )
+        FieldEvent.objects.create(
+            tenant=self.tenant, competency=competency, unit=self.unit_blocked,
+            collaborator=self.person_blocked, event_type="daily", event_date=date(2026, 10, 2),
+            quantity=1, reason="Evento sintético fora do escopo", created_by=self.user, idempotency_key=uuid.uuid4(),
+        )
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Unidade Permitida")
         self.assertNotContains(response, "Unidade Bloqueada")
+        self.assertEqual(response.context["units"][0].dashboard_event_count, 1)
+        self.assertEqual(response.context["event_count"], 1)
 
     def test_conference_filters_events_and_shows_calculation_details(self):
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
@@ -422,6 +435,93 @@ class FieldBackendTests(TestCase):
         self.assertEqual(cycle.status, "draft")
         self.assertEqual(cycle.approved_by, None)
         self.assertEqual(entry.status, "draft")
+
+    def test_conference_decision_returns_to_the_same_filtered_view(self):
+        UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
+        competency = Competency.objects.get(tenant=self.tenant)
+        event = FieldEvent.objects.create(
+            tenant=self.tenant, competency=competency, unit=self.unit_allowed, collaborator=self.person_allowed,
+            event_type="daily", event_date=date(2026, 10, 14), quantity=1, reason="Evento filtrado",
+            status="pending", idempotency_key=uuid.uuid4(), created_by=self.user,
+        )
+        filtered = f"/conferencia/?competency={competency.id}&unit={self.unit_allowed.id}&status=pending"
+
+        page = self.client.get(filtered)
+        self.assertContains(page, 'name="next"')
+        response = self.client.post(f"/conferencia/{event.id}/approve/", {"reason": "Conferido pelo DP", "next": filtered})
+        self.assertRedirects(response, filtered, fetch_redirect_response=False)
+
+        event.status = "pending"
+        event.save(update_fields=["status"])
+        response = self.client.post(f"/conferencia/{event.id}/reject/", {"reason": "Rejeitado", "next": "https://evil.example/"})
+        self.assertRedirects(response, "/conferencia/", fetch_redirect_response=False)
+
+    def test_dp_creates_competency_from_settings_and_leader_cannot(self):
+        response = self.client.post("/configuracoes/competencias/nova/", {"year": 2026, "month": 11})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Competency.objects.filter(tenant=self.tenant, month=11).exists())
+
+        UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
+        self.assertContains(self.client.get("/configuracoes/"), "Criar competência")
+        response = self.client.post("/configuracoes/competencias/nova/", {"year": 2026, "month": 11, "cutoff_date": "2026-11-25"})
+        self.assertRedirects(response, "/configuracoes/", fetch_redirect_response=False)
+        created = Competency.objects.get(tenant=self.tenant, year=2026, month=11)
+        self.assertEqual(created.status, "open")
+        self.assertTrue(AuditLog.objects.filter(tenant=self.tenant, entity="competency", entity_id=str(created.pk), action="create").exists())
+
+        duplicate = self.client.post("/configuracoes/competencias/nova/", {"year": 2026, "month": 11})
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(self.client.post("/configuracoes/competencias/nova/", {"year": 2026, "month": 13}).status_code, 400)
+        self.assertEqual(Competency.objects.filter(tenant=self.tenant).count(), 2)
+
+    def test_dp_deletes_only_empty_open_competencies(self):
+        UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
+        current = Competency.objects.get(tenant=self.tenant, month=10)
+        mistaken = Competency.objects.create(tenant=self.tenant, year=2026, month=12)
+        with_event = Competency.objects.create(tenant=self.tenant, year=2026, month=9)
+        FieldEvent.objects.create(
+            tenant=self.tenant, competency=with_event, unit=self.unit_allowed, collaborator=self.person_allowed,
+            event_type="daily", event_date=date(2026, 9, 2), quantity=1, reason="Lançamento existente",
+            status="pending", idempotency_key=uuid.uuid4(), created_by=self.user,
+        )
+        page = self.client.get("/configuracoes/")
+        self.assertContains(page, "Recebe os lançamentos")
+        self.assertContains(page, "possui 1 lançamentos de campo")
+
+        self.assertRedirects(self.client.post(f"/configuracoes/competencias/{mistaken.id}/excluir/"), "/configuracoes/", fetch_redirect_response=False)
+        self.assertFalse(Competency.objects.filter(pk=mistaken.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(tenant=self.tenant, entity="competency", action="delete", entity_id=str(mistaken.pk)).exists())
+
+        self.client.post(f"/configuracoes/competencias/{with_event.id}/excluir/")
+        self.assertTrue(Competency.objects.filter(pk=with_event.pk).exists())
+        current.status = "review"
+        current.save(update_fields=["status"])
+        self.client.post(f"/configuracoes/competencias/{current.id}/excluir/")
+        self.assertTrue(Competency.objects.filter(pk=current.pk).exists())
+
+    def test_leader_cannot_delete_competency(self):
+        competency = Competency.objects.create(tenant=self.tenant, year=2026, month=12)
+        self.assertEqual(self.client.post(f"/configuracoes/competencias/{competency.id}/excluir/").status_code, 403)
+        self.assertTrue(Competency.objects.filter(pk=competency.pk).exists())
+
+    def test_closing_explains_what_blocks_each_competency(self):
+        UserScope.objects.create(user=self.user, tenant=self.tenant, role="platform")
+        current = Competency.objects.get(tenant=self.tenant, month=10)
+        later = Competency.objects.create(tenant=self.tenant, year=2026, month=12)
+        FieldEvent.objects.create(
+            tenant=self.tenant, competency=later, unit=self.unit_allowed, collaborator=self.person_allowed,
+            event_type="daily", event_date=date(2026, 12, 2), quantity=1, reason="Pendente de conferência",
+            status="pending", idempotency_key=uuid.uuid4(), created_by=self.user,
+        )
+        page = self.client.get("/fechamento/")
+        self.assertContains(page, "não é a competência corrente")
+        self.assertContains(page, "1 evento(s) em rascunho ou pendentes de conferência: Unidade Permitida (1)")
+        self.assertContains(page, f"/conferencia/?competency={later.id}&amp;status=pending")
+
+        response = self.client.post(f"/fechamento/{later.id}/close/", {"reason": "Tentativa de fechamento"}, follow=True)
+        self.assertContains(response, "Não foi possível fechar 12/2026")
+        later.refresh_from_db()
+        self.assertEqual(later.status, "open")
 
     def test_conference_decision_cannot_change_event_in_closed_competency(self):
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
@@ -752,6 +852,26 @@ class FieldBackendTests(TestCase):
         self.assertEqual(PaymentEntry.objects.count(), 2)
         self.assertEqual(sum((entry.amount for entry in entries), Decimal("0.00")), Decimal("4552.83"))
 
+    def test_monthly_compensation_uses_calendar_days_when_configured(self):
+        competency = Competency.objects.get(tenant=self.tenant)
+        competency.year = 2026
+        competency.month = 1
+        competency.save(update_fields=["year", "month", "updated_at"])
+        CompensationVersion.objects.create(collaborator=self.person_allowed, company=self.company, unit=self.unit_allowed, combined_salary="5000.00", clt_salary="2316.96", effective_from=date(2026, 1, 1), reason="Regra sintética de teste", created_by=self.user)
+        MonthlyBaseConfiguration.objects.create(company=self.company, base_type="calendar_days", effective_from=date(2026, 1, 1), reason="Base por dias reais", created_by=self.user)
+        for day in range(1, 6):
+            FieldEvent.objects.create(tenant=self.tenant, competency=competency, unit=self.unit_allowed, collaborator=self.person_allowed, event_type="rain_release", event_date=date(2026, 1, day), quantity=1, reason="Impedimento aprovado", status="approved", idempotency_key=uuid.uuid4(), created_by=self.user, approved_by=self.user)
+        result = calculate_monthly_compensation(competency, self.person_allowed, self.unit_allowed)
+        self.assertEqual(result.normal_days, 26)
+        self.assertEqual(result.rain_days, 5)
+        self.assertEqual(result.memory["base_type"], "calendar_days")
+        self.assertEqual(result.memory["base_days"], "31")
+
+    def test_monthly_base_configuration_rejects_invalid_vigency(self):
+        configuration = MonthlyBaseConfiguration(company=self.company, base_type="fixed_30", effective_from=date(2026, 2, 1), effective_to=date(2026, 1, 31), reason="Vigência inválida", created_by=self.user)
+        with self.assertRaises(ValidationError):
+            configuration.save()
+
     def test_monthly_compensation_keeps_same_collaborator_separate_by_unit(self):
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
         competency = Competency.objects.get(tenant=self.tenant)
@@ -876,6 +996,23 @@ class FieldBackendTests(TestCase):
         self.assertEqual(result.calculated_amount, Decimal("50.00"))
         self.assertEqual(cycle.cycle_type, "day10")
         self.assertEqual(entries[0].amount, Decimal("50.00"))
+
+    def test_cumulative_rubric_consolidates_approved_occurrences(self):
+        competency = Competency.objects.get(tenant=self.tenant)
+        rubric = Rubric.objects.create(tenant=self.tenant, code="META_PRODUTIVIDADE", name="Meta de produtividade", category="earning", cycle_type="day10", effective_from=date(2026, 1, 1), created_by=self.user)
+        application = RubricApplication.objects.create(tenant=self.tenant, rubric=rubric, unit=self.unit_allowed, mode="cumulative", amount="50.00", cycle_type="day10", leader_available=True, effective_from=date(2026, 1, 1), instructions="Registre cada meta atingida.", status="approved", created_by=self.user, approved_by=self.user)
+        events = []
+        for day, quantity in ((5, "1"), (12, "2")):
+            events.append(FieldEvent.objects.create(tenant=self.tenant, competency=competency, unit=self.unit_allowed, collaborator=self.person_allowed, event_type="rubric", application=application, event_date=date(2026, 10, day), quantity=quantity, reason="Meta atingida", status="approved", idempotency_key=uuid.uuid4(), created_by=self.user, approved_by=self.user))
+
+        from .rubric_applications import generate_application_entries
+        entries = generate_application_entries(competency, self.user)
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].amount, Decimal("150.00"))
+        self.assertEqual(entries[0].memory["quantity"], "3")
+        self.assertEqual(set(entries[0].memory["event_ids"]), {event.pk for event in events})
+        self.assertEqual(PaymentEntry.objects.filter(cycle__competency=competency, rubric=rubric).count(), 1)
 
     def test_import_workbook_creates_only_preview_batch(self):
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")

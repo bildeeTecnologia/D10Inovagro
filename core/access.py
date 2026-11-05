@@ -14,17 +14,36 @@ CAPABILITY_ROLES = {
     "admissions": {"dp", "management", "platform"},
 }
 
+_TENANT_UNSET = object()
+
+
+def user_scopes(user):
+    """Escopos do usuário, lidos uma vez por requisição (o usuário é recarregado a cada requisição)."""
+    scopes = getattr(user, "_d10_scopes", None)
+    if scopes is None:
+        scopes = list(user.scopes.select_related("tenant", "company", "unit").order_by("tenant_id", "id"))
+        user._d10_scopes = scopes
+    return scopes
+
+
+def user_roles(user, tenant):
+    if tenant is None:
+        return set()
+    return {scope.role for scope in user_scopes(user) if scope.tenant_id == tenant.pk}
+
 
 def tenant_for_user(user):
     if not user.is_authenticated:
         return None
-    scope = user.scopes.select_related("tenant").order_by("tenant_id").first()
+    scopes = user_scopes(user)
+    scope = scopes[0] if scopes else None
     return scope.tenant if scope and scope.tenant.active else None
 
 
-def user_access(user):
-    tenant = tenant_for_user(user)
-    roles = set(user.scopes.filter(tenant=tenant).values_list("role", flat=True)) if tenant else set()
+def user_access(user, tenant=_TENANT_UNSET):
+    if tenant is _TENANT_UNSET:
+        tenant = tenant_for_user(user)
+    roles = user_roles(user, tenant) if tenant else set()
     capabilities = {
         name: bool(tenant and (user.is_superuser or roles.intersection(allowed_roles)))
         for name, allowed_roles in CAPABILITY_ROLES.items()
@@ -36,10 +55,10 @@ def user_access(user):
 
 
 def navigation_access(request):
-    if not hasattr(request, "platform_access"):
-        request.platform_access = user_access(request.user)
     if not hasattr(request, "current_tenant"):
         request.current_tenant = tenant_for_user(request.user)
+    if not hasattr(request, "platform_access"):
+        request.platform_access = user_access(request.user, tenant=request.current_tenant)
     area = area_for_path(request.path)
     if request.resolver_match and request.resolver_match.url_name == "workspace_area":
         slug = request.resolver_match.kwargs.get("area_slug")
