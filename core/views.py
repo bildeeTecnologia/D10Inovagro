@@ -38,7 +38,8 @@ from .models import Rubric
 from .rubric_forms import RubricForm
 from .competency_forms import CompetencyForm
 from .rubric_applications import available_applications
-from .access import capability_required, navigation_access, tenant_for_user as _tenant_for_user, user_roles, user_scopes
+from .access import capability_required, navigation_access, tenant_for_user as _tenant_for_user, user_access, user_roles, user_scopes
+from .event_releases import fixed_event_types, leader_event_cards, released_event_types
 from .navigation import AREAS, available_tools
 from .event_cost_dashboard import build_event_cost_dashboard
 
@@ -107,6 +108,13 @@ def dashboard(request):
     return render(request, "core/dashboard.html", context)
 
 
+def _released_types_for(user, tenant):
+    """Líderes só lançam os tipos liberados pelo DP; o escritório lança qualquer tipo."""
+    if user_access(user, tenant)["leader_only"]:
+        return released_event_types(tenant)
+    return None
+
+
 @login_required
 @capability_required("field")
 def event_create(request):
@@ -115,7 +123,7 @@ def event_create(request):
         messages.error(request, "Configure um cliente antes de lançar eventos.")
         return redirect("dashboard")
     if request.method == "POST":
-        form = FieldEventForm(request.POST)
+        form = FieldEventForm(request.POST, released_types=_released_types_for(request.user, tenant))
         allowed_units = _allowed_units_for_user(request.user, tenant)
         form.fields["application"].queryset = available_applications(tenant, allowed_units)
         form.fields["unit"].queryset = allowed_units
@@ -168,7 +176,7 @@ def event_create(request):
                 messages.success(request, message)
                 return redirect("field_app" if navigation_access(request)["platform_access"]["leader_only"] else "dashboard")
     else:
-        form = FieldEventForm()
+        form = FieldEventForm(released_types=_released_types_for(request.user, tenant))
         allowed_units = _allowed_units_for_user(request.user, tenant)
         form.fields["application"].queryset = available_applications(tenant, allowed_units)
         form.fields["unit"].queryset = allowed_units
@@ -207,7 +215,7 @@ def field_app(request):
             "units": allowed_units,
             "unit": unit,
             "collaborators": collaborators,
-            "event_types": [item for item in FieldEvent.EVENT_CHOICES if item[0] != "rubric"],
+            "event_cards": leader_event_cards(tenant) if tenant else [],
             "rubric_applications": available_applications(tenant, [unit]) if tenant and unit else [],
         },
     )
@@ -234,20 +242,47 @@ def _can_manage_rules(user, tenant):
     return user.is_superuser or bool(user_roles(user, tenant).intersection(["dp", "platform"]))
 
 
+FIXED_EVENT_RULE_NOTES = {
+    "rain_release": "Composição mensal: diária = salário CLT ÷ 30",
+    "occurrence": "Registro administrativo, sem valor",
+    "advance": "Solicitação registrada; não paga nem desconta sozinha",
+}
+
+
+def rule_list_context(request, tenant, bonus_form=None):
+    from .bonus_forms import BonusForm
+    units = _allowed_units_for_user(request.user, tenant)
+    published = {}
+    for rule in tenant.calculation_rules.filter(status="published").order_by("code", "-version"):
+        published.setdefault(rule.event_type, f"{rule.code} v{rule.version}")
+    blocked = set(tenant.event_type_settings.filter(leader_available=False).values_list("event_type", flat=True))
+    fixed_events = [
+        {
+            "value": value, "label": label, "released": value not in blocked,
+            "rule": FIXED_EVENT_RULE_NOTES.get(value) or (f"Regra publicada {published[value]}" if value in published else ""),
+        }
+        for value, label in fixed_event_types()
+    ]
+    applications = tenant.rubric_applications.filter(unit__in=units).select_related("rubric", "unit")
+    return {
+        "tenant": tenant,
+        "rules": tenant.calculation_rules.select_related("company", "unit", "created_by", "approved_by"),
+        "rubrics": tenant.rubrics.all(),
+        "fixed_events": fixed_events,
+        "bonus_applications": [app for app in applications if app.mode in {"event", "cumulative"}],
+        "applications": [app for app in applications if app.mode not in {"event", "cumulative"}],
+        "bonus_form": bonus_form or BonusForm(tenant=tenant, units=units),
+        "agreements": tenant.collaborator_rubrics.filter(application__unit__in=units).select_related("application__rubric", "application__unit", "collaborator"),
+        "generation_competencies": tenant.competencies.filter(status__in=["open", "review"]),
+    }
+
+
 @login_required
 def rule_list(request):
     tenant = _tenant_for_user(request.user)
     if not tenant or not _can_manage_rules(request.user, tenant):
         return render(request, "core/empty_state.html", {"title": "Acesso restrito às regras"}, status=403)
-    rules = tenant.calculation_rules.select_related("company", "unit", "created_by", "approved_by")
-    rubrics = tenant.rubrics.all()
-    units = _allowed_units_for_user(request.user, tenant)
-    return render(request, "core/rule_list.html", {
-        "tenant": tenant, "rules": rules, "rubrics": rubrics,
-        "applications": tenant.rubric_applications.filter(unit__in=units).select_related("rubric", "unit"),
-        "agreements": tenant.collaborator_rubrics.filter(application__unit__in=units).select_related("application__rubric", "application__unit", "collaborator"),
-        "generation_competencies": tenant.competencies.filter(status__in=["open", "review"]),
-    })
+    return render(request, "core/rule_list.html", rule_list_context(request, tenant))
 
 
 def _rubric_snapshot(rubric):

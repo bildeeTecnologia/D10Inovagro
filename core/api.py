@@ -10,6 +10,8 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from .access import user_access
+from .event_releases import released_event_types
 from .models import AuditLog, FieldEvent
 from .views import _allowed_units_for_user, _audit, _invalidate_approved_payment_cycles, _tenant_for_user
 
@@ -21,6 +23,7 @@ def sync_events(request):
     if not tenant:
         return JsonResponse({"error": "Usuário sem escopo de cliente."}, status=403)
     allowed_units = _allowed_units_for_user(request.user, tenant)
+    leader_released_types = released_event_types(tenant) if user_access(request.user, tenant)["leader_only"] else None
     try:
         payload = json.loads(request.body.decode("utf-8"))
         items = payload.get("events", [])
@@ -58,6 +61,8 @@ def sync_events(request):
             valid_types = {choice[0] for choice in FieldEvent.EVENT_CHOICES}
             if event_type not in valid_types:
                 raise ValueError("Tipo de evento inválido.")
+            if leader_released_types is not None and event_type != "rubric" and event_type not in leader_released_types:
+                raise ValueError("Este tipo de evento não está liberado para lançamento pelos líderes.")
             try:
                 quantity = Decimal(str(item.get("quantity", "1")))
             except (InvalidOperation, TypeError):

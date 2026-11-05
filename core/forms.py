@@ -24,11 +24,13 @@ class FieldEventForm(forms.ModelForm):
             "quantity": forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, released_types=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.released_types = released_types
         self.fields["unit"].empty_label = "Selecione a unidade"
         self.fields["collaborator"].empty_label = "Selecione o colaborador"
-        self.fields["event_type"].choices = [("", "Selecione o tipo de evento")] + list(FieldEvent.EVENT_CHOICES)
+        choices = [item for item in FieldEvent.EVENT_CHOICES if released_types is None or item[0] == "rubric" or item[0] in released_types]
+        self.fields["event_type"].choices = [("", "Selecione o tipo de evento")] + choices
         self.fields["application"].queryset = RubricApplication.objects.none()
         self.fields["application"].help_text = "Selecione uma regra aprovada da unidade. Eventos fixos aceitam uma ocorrência por data."
 
@@ -48,6 +50,9 @@ class FieldEventForm(forms.ModelForm):
             competency = unit.tenant.competencies.filter(status__in=["open", "review"]).order_by("-year", "-month").first()
             if competency and (event_date.year, event_date.month) != (competency.year, competency.month):
                 self.add_error("event_date", "A data deve pertencer à competência aberta; lançamentos atrasados precisam de regularização pelo DP.")
+        event_type = cleaned.get("event_type")
+        if self.released_types is not None and event_type and event_type != "rubric" and event_type not in self.released_types:
+            self.add_error("event_type", "Este tipo de evento não está liberado para lançamento pelos líderes.")
         if cleaned.get("event_type") == "rubric":
             if not application:
                 self.add_error("application", "Escolha a regra da rubrica.")

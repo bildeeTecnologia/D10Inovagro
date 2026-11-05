@@ -1,7 +1,51 @@
 {% extends 'base.html' %}
-{% block title %}Regras administrativas — Fechamento de Campo{% endblock %}
+{% block title %}Eventos e bonificações — Fechamento de Campo{% endblock %}
 {% block content %}
-<div class="page-head"><div><p class="eyebrow">Governança do cálculo</p><h1>Regras administrativas</h1><p class="subtitle">Versões publicadas são aplicadas aos eventos conforme a vigência.</p></div><form method="post" action="{% url 'calculation_run' %}">{% csrf_token %}<button class="button primary" type="submit">Executar cálculo da competência</button></form></div>
+<div class="page-head"><div><p class="eyebrow">Governança do cálculo</p><h1>Eventos e bonificações</h1><p class="subtitle">Defina aqui o que os líderes podem lançar no app. O líder só vê o que estiver liberado.</p></div><form method="post" action="{% url 'calculation_run' %}">{% csrf_token %}<button class="button primary" type="submit">Executar cálculo da competência</button></form></div>
+
+<section class="card">
+  <div class="card-head"><div><h2>1. Eventos do app do líder</h2><span class="muted-text">Cada linha liberada vira um botão no app. Desmarcar tira o botão do app e bloqueia o envio, inclusive de lançamentos feitos offline.</span></div></div>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Evento</th><th>Como é calculado</th><th>No app do líder</th></tr></thead>
+    <tbody>
+    {% for item in fixed_events %}<tr>
+      <td><strong>{{ item.label }}</strong></td>
+      <td>{% if item.rule %}{{ item.rule }}{% else %}<span class="muted-text">Sem regra publicada. Os parâmetros ficam no Django Admin.</span>{% endif %}</td>
+      <td><form method="post" action="{% url 'event_type_release' item.value %}">{% csrf_token %}<input type="hidden" name="leader_available" value="{% if item.released %}0{% else %}1{% endif %}">{% if item.released %}<span class="status good">Liberado</span> <button class="button small-button" type="submit">Remover do app</button>{% else %}<span class="status warning">Bloqueado</span> <button class="button small-button" type="submit">Liberar</button>{% endif %}</form></td>
+    </tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><h2>2. Bonificações por ocorrência</h2><span class="muted-text">Valor fixo definido pelo DP; o líder registra cada ocorrência e o DP aprova na Conferência.</span></div></div>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Bonificação / unidade</th><th>Valor e pagamento</th><th>Vigência</th><th>Situação</th><th>No app do líder</th></tr></thead>
+    <tbody>
+    {% for app in bonus_applications %}<tr>
+      <td><strong>{{ app.rubric.name }}</strong><small>{{ app.unit.name }} · {{ app.get_mode_display }}</small></td>
+      <td>R$ {{ app.amount|default_if_none:'—' }}<small>{{ app.get_cycle_type_display }}</small></td>
+      <td>{{ app.effective_from|date:'d/m/Y' }} — {{ app.effective_to|date:'d/m/Y'|default:'indeterminado' }}</td>
+      <td>{{ app.get_status_display }}{% if app.status == 'draft' %}<br><a href="{% url 'application_edit' app.pk %}">Editar</a><form method="post" action="{% url 'application_approve' app.pk %}">{% csrf_token %}<input name="reason" required minlength="5" placeholder="Justificativa de aprovação"><button class="button small-button" type="submit">Aprovar</button></form>{% elif not app.effective_to %}<br><a href="{% url 'application_end' app.pk %}">Definir encerramento</a>{% endif %}</td>
+      <td>{% if app.status == 'approved' %}<form method="post" action="{% url 'application_leader_release' app.pk %}">{% csrf_token %}<input type="hidden" name="leader_available" value="{% if app.leader_available %}0{% else %}1{% endif %}">{% if app.leader_available %}<span class="status good">Liberada</span> <button class="button small-button" type="submit">Remover do app</button>{% else %}<span class="status warning">Bloqueada</span> <button class="button small-button" type="submit">Liberar</button>{% endif %}</form>{% else %}<span class="muted-text">Aprove para liberar{% if app.leader_available %} (já marcada para liberar){% endif %}.</span>{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="5" class="empty">Nenhuma bonificação cadastrada. Use o formulário abaixo.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  <details{% if bonus_form.errors %} open{% endif %}>
+    <summary><strong>＋ Nova bonificação</strong></summary>
+    <form method="post" action="{% url 'bonus_create' %}" class="form-grid">
+      {% csrf_token %}
+      {% if bonus_form.non_field_errors %}<div class="form-errors field full">{{ bonus_form.non_field_errors }}</div>{% endif %}
+      {% for field in bonus_form %}<div class="field{% if field.name in 'units instructions reason approve_now' %} full{% endif %}"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<span class="muted-text">{{ field.help_text }}</span>{% endif %}{% if field.errors %}<span class="error">{{ field.errors|join:' ' }}</span>{% endif %}</div>{% endfor %}
+      <div class="field full"><button class="button primary" type="submit">Salvar bonificação</button><span class="muted-text">Cria a rubrica e uma regra para cada unidade escolhida, em uma só etapa.</span></div>
+    </form>
+  </details>
+</section>
+
+{% include 'core/application_catalog.html' %}
+
+<details class="card">
+  <summary><strong>Avançado</strong> — catálogo de rubricas e regras de cálculo legadas</summary>
 <section class="card">
   <div class="card-head"><div><h2>Catálogo de rubricas</h2><span class="muted-text">O que é o componente; a fórmula de cálculo é uma configuração separada.</span></div><a class="button primary" href="{% url 'rubric_create' %}">Nova rubrica</a></div>
   <div class="notice-box"><strong>Cadastrar não gera pagamento</strong><p>Tipo, situação, vigência e ciclo previsto organizam o catálogo. Não ativam fórmulas, não criam botões no campo e não mudam os ciclos dos cálculos existentes. Use Informativa para referências que não devem gerar novo provento ou desconto.</p></div>
@@ -20,7 +64,8 @@
     <p><strong>Combinado:</strong> é uma meta líquida informada pelo negócio. Cadastrar uma rubrica de provento não implementa essa garantia líquida.</p>
   </details>
 </section>
-{% include 'core/application_catalog.html' %}
 <section class="card rules-card"><div class="card-head"><h2>Regras de cálculo legadas</h2><span class="tag">{{ rules|length }} regras</span></div><table><thead><tr><th>Regra</th><th>Evento</th><th>Escopo</th><th>Vigência</th><th>Status</th><th>Ação</th></tr></thead><tbody>{% for rule in rules %}<tr><td><strong>{{ rule.code }} v{{ rule.version }}</strong><small>{{ rule.name }}</small></td><td>{{ rule.get_event_type_display }}</td><td>{% if rule.unit %}{{ rule.unit.name }}{% elif rule.company %}{{ rule.company.legal_name }}{% else %}Todas as unidades{% endif %}</td><td>{{ rule.effective_from|date:'d/m/Y' }}{% if rule.effective_to %} até {{ rule.effective_to|date:'d/m/Y' }}{% else %} em diante{% endif %}</td><td><span class="status {% if rule.status == 'published' %}good{% elif rule.status == 'suspended' %}danger{% else %}warning{% endif %}">{{ rule.get_status_display }}</span></td><td>{% if rule.status == 'draft' or rule.status == 'review' %}<form method="post" action="{% url 'rule_publish' rule.id %}">{% csrf_token %}<button class="button small-button" type="submit">Publicar</button></form>{% else %}<span class="muted-text">{{ rule.approved_by|default:'—' }}</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="6" class="empty">Nenhuma regra legada cadastrada.</td></tr>{% endfor %}</tbody></table></section>
 <section class="card rule-note"><strong>Regras de cálculo — fluxo atual preservado</strong><p>O motor de eventos aceita regras publicadas para <b>diária</b>, <b>hora extra</b> e <b>Adicional 12h</b>. A composição mensal com chuva é tratada separadamente. Os parâmetros de cálculo continuam no Django Admin; este cadastro não implementa as fórmulas pendentes da matriz do DP. Cada resultado mantém a memória do cálculo aplicado.</p></section>
+
+</details>
 {% endblock %}

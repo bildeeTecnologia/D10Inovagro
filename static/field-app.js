@@ -149,18 +149,24 @@
       const quantity = document.querySelector('#event-quantity');
       quantity.value = '1';
       quantity.disabled = selectedType === 'additional_12h' || selectedType === 'rubric';
-      document.querySelector('#field-event-form').hidden = false;
+      const guidance = document.querySelector('#event-guidance');
+      guidance.textContent = button.dataset.hint || '';
+      guidance.hidden = !button.dataset.hint;
+      const form = document.querySelector('#field-event-form');
+      form.hidden = false;
+      form.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     }));
     document.querySelector('#field-event-form').addEventListener('submit', async event => {
       event.preventDefault();
       const error = validateForm();
       if (error) { window.alert(error); return; }
       const selectedButton = document.querySelector('.event-type.selected');
-      await putPending({client_id: uuid(), idempotency_key: uuid(), event_id: null, unit_id: config.unitId, collaborator_id: document.querySelector('#collaborator-id').value, event_type: selectedType, application_id: selectedApplication, event_label: selectedButton.textContent.trim(), event_date: document.querySelector('#event-date').value, quantity: document.querySelector('#event-quantity').value, reason: document.querySelector('#event-reason').value.trim(), status: 'pending', attempts: 0, last_error: '', created_at: new Date().toISOString()});
+      await putPending({client_id: uuid(), idempotency_key: uuid(), event_id: null, unit_id: config.unitId, collaborator_id: document.querySelector('#collaborator-id').value, event_type: selectedType, application_id: selectedApplication, event_label: selectedButton.dataset.label || selectedButton.textContent.trim(), event_date: document.querySelector('#event-date').value, quantity: document.querySelector('#event-quantity').value, reason: document.querySelector('#event-reason').value.trim(), status: 'pending', attempts: 0, last_error: '', created_at: new Date().toISOString()});
       event.target.reset();
       document.querySelector('#event-date').value = today();
       document.querySelector('#event-quantity').disabled = false;
       event.target.hidden = true;
+      document.querySelector('#event-guidance').hidden = true;
       selectedType = null;
       selectedApplication = null;
       document.querySelectorAll('.event-type').forEach(b => b.classList.remove('selected'));

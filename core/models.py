@@ -407,6 +407,23 @@ class AuditLog(models.Model):
         return f"{self.get_action_display()} — {self.entity}#{self.entity_id}"
 
 
+class EventTypeSetting(TimeStampedModel):
+    """Liberação, por cliente, de cada tipo de evento fixo para lançamento pelos líderes no app.
+
+    Ausência de registro equivale a liberado, preservando o comportamento anterior.
+    """
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="event_type_settings")
+    event_type = models.CharField(max_length=30, choices=[item for item in FieldEvent.EVENT_CHOICES if item[0] != "rubric"])
+    leader_available = models.BooleanField(default=True)
+    updated_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["tenant", "event_type"], name="unique_event_type_setting_per_tenant")]
+
+    def __str__(self):
+        return f"{self.get_event_type_display()} — {'liberado' if self.leader_available else 'bloqueado'} para líderes"
+
+
 class CalculationRule(TimeStampedModel):
     STATUS_CHOICES = [("draft", "Rascunho"), ("review", "Em revisão"), ("published", "Publicada"), ("suspended", "Suspensa")]
     tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name="calculation_rules")

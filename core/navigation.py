@@ -67,10 +67,10 @@ AREAS = {
                 "button": "Verificar pendências",
             },
             {
-                "title": "Regras e rubricas", "route": "rule_list", "capability": "rules",
-                "description": "Consulte e configure as regras autorizadas e as rubricas usadas na conferência.",
-                "example": "Uma verba fixa foi autorizada: cadastre a regra e os vínculos antes de gerar os valores.",
-                "button": "Gerenciar regras",
+                "title": "Eventos e bonificações", "route": "rule_list", "capability": "rules",
+                "description": "Defina o que os líderes podem lançar no app e configure bonificações e valores fixos em uma só tela.",
+                "example": "Uma bonificação foi autorizada: cadastre o valor, escolha as unidades e libere para os líderes.",
+                "button": "Configurar eventos e bonificações",
             },
             {
                 "title": "Conferência", "route": "conference", "capability": "review",
