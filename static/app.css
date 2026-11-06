@@ -32,6 +32,8 @@
 
 .report-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:1000px){.report-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
+.help-section{margin:0 46px 22px}.help-section .install-guides{margin-top:14px}.help-section .tool-example{margin-top:12px}.help-section .tool-example:first-of-type{margin-top:16px}@media(max-width:650px){.help-section{margin:0 16px 18px}}
+
 
 /* Painel gráfico de custos por competência, unidade e evento. */
 .report-metrics-visual{grid-template-columns:repeat(3,minmax(0,1fr));padding-top:0}.report-metrics-visual .metric{min-height:112px}.metric-variation-up strong{color:var(--red)}.metric-variation-down strong{color:var(--green-2)}.metric-variation-neutral strong{color:var(--ink)}

@@ -23,7 +23,8 @@ def sync_events(request):
     if not tenant:
         return JsonResponse({"error": "Usuário sem escopo de cliente."}, status=403)
     allowed_units = _allowed_units_for_user(request.user, tenant)
-    leader_released_types = released_event_types(tenant) if user_access(request.user, tenant)["leader_only"] else None
+    is_leader_only = user_access(request.user, tenant)["leader_only"]
+    leader_released_types = released_event_types(tenant) if is_leader_only else None
     try:
         payload = json.loads(request.body.decode("utf-8"))
         items = payload.get("events", [])
@@ -82,7 +83,10 @@ def sync_events(request):
                 ).first()
                 if not application:
                     raise ValueError("Regra de rubrica não encontrada nesta unidade.")
-                validate_event_application(application, tenant, unit, collaborator, event_date, quantity)
+                validate_event_application(
+                    application, tenant, unit, collaborator, event_date, quantity,
+                    require_leader_available=is_leader_only,
+                )
             elif item.get("application_id"):
                 raise ValueError("Regra de rubrica incompatível com o tipo de evento.")
             reason = str(item.get("reason", "")).strip()

@@ -57,6 +57,7 @@ class RosterImportTests(TestCase):
         response = self.client.post(f"/importacao/cadastro/{batch.id}/confirmar/")
         self.assertEqual(response.status_code, 302)
         person = Collaborator.objects.get(tenant=self.tenant, cpf_fingerprint__gt="")
+        self.assertEqual(person.cpf_masked, "***.***.**7-25")
         links = EmploymentLink.objects.filter(collaborator=person).order_by("unit__name")
         self.assertEqual(links.count(), 2)
         self.assertEqual({link.employee_code for link in links}, {"A-10", "B-20"})

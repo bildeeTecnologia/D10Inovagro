@@ -8,7 +8,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import Client, TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from reportlab.pdfgen import canvas
 
 from .models import AdmissionRequest, CalculationResult, CalculationRule, Collaborator, Company, CompensationVersion, Competency, DataQualityIssue, EmploymentLink, FieldEvent, ImportBatch, MonthlyBaseConfiguration, MonthlyCompensationResult, PaymentCycle, PaymentEntry, ReportEmission, Rubric, Tenant, Unit, UserScope
@@ -897,6 +897,53 @@ class FieldBackendTests(TestCase):
         report_response = self.client.get("/relatorios/?report_type=monthly")
         self.assertEqual(report_response.status_code, 200)
         self.assertEqual({row["unidade"] for row in report_response.context["rows"]}, {"Unidade Permitida", "Unidade Secundária"})
+
+    def test_monthly_report_matches_legacy_layout_per_unit_employment(self):
+        UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="dp")
+        second_unit = Unit.objects.create(tenant=self.tenant, company=self.company, name="Unidade Secundária")
+        UserScope.objects.create(user=self.user, tenant=self.tenant, unit=second_unit, role="dp")
+        EmploymentLink.objects.create(
+            collaborator=self.person_allowed, company=self.company, unit=second_unit,
+            job_title="Operador de máquinas", admission_date=date(2026, 3, 1),
+        )
+        self.person_allowed.cpf_masked = "***.***.**7-25"
+        self.person_allowed.save(update_fields=["cpf_masked"])
+        competency = Competency.objects.get(tenant=self.tenant)
+        CompensationVersion.objects.create(collaborator=self.person_allowed, company=self.company, unit=self.unit_allowed, combined_salary="5000.00", clt_salary="2316.96", effective_from=date(2026, 1, 1), reason="Regra sintética", created_by=self.user)
+        CompensationVersion.objects.create(collaborator=self.person_allowed, company=self.company, unit=second_unit, combined_salary="3000.00", clt_salary="2000.00", effective_from=date(2026, 1, 1), reason="Regra sintética", created_by=self.user)
+        first_result = calculate_monthly_compensation(competency, self.person_allowed, self.unit_allowed)
+        second_result = calculate_monthly_compensation(competency, self.person_allowed, second_unit)
+        generate_monthly_entries(first_result, self.user)
+        generate_monthly_entries(second_result, self.user)
+
+        response = self.client.get("/relatorios/?report_type=monthly")
+        rows = {row["unidade"]: row for row in response.context["rows"]}
+        self.assertEqual(rows["Unidade Permitida"]["funcao"], "Auxiliar")
+        self.assertEqual(rows["Unidade Permitida"]["admissao"], "01/01/2026")
+        self.assertEqual(rows["Unidade Permitida"]["empresa"], "Cliente Teste Ltda.")
+        self.assertEqual(rows["Unidade Permitida"]["cpf"], "***.***.**7-25")
+        self.assertEqual(rows["Unidade Secundária"]["funcao"], "Operador de máquinas")
+        self.assertEqual(rows["Unidade Secundária"]["admissao"], "01/03/2026")
+
+        export = self.client.get("/relatorios/exportar/xlsx/?report_type=monthly")
+        self.assertEqual(export.status_code, 200)
+        workbook = load_workbook(BytesIO(export.content))
+        sheet = workbook["Composição Mensal"]
+        self.assertEqual(sheet["A1"].value, "Composição mensal CLT e combinado")
+        self.assertIn("EMPRESA: Cliente Teste Ltda.", sheet["A2"].value)
+        self.assertIn("CNPJ Nº 11.111.111/0001-11", sheet["A3"].value)
+        self.assertIn("COMPETÊNCIA: 10/2026", sheet["A4"].value)
+        headers = [sheet.cell(row=5, column=col).value for col in range(1, 13)]
+        self.assertEqual(headers, ["n", "Colaborador", "Empresa", "Admissão", "Função", "CPF", "Unidade", "Dias normais", "Dias chuva", "Valor normal", "Valor chuva", "Total"])
+        self.assertEqual(sheet["B6"].value, "Pessoa Permitida")
+        self.assertEqual(sheet["D6"].value, "01/01/2026")
+        self.assertEqual(sheet["E6"].value, "Auxiliar")
+        self.assertEqual(sheet["F6"].value, "***.***.**7-25")
+        self.assertEqual(sheet["G6"].value, "Unidade Permitida")
+        self.assertEqual(sheet["E7"].value, "Operador de máquinas")
+        self.assertEqual(sheet["G7"].value, "Unidade Secundária")
+        self.assertEqual(sheet.cell(row=8, column=1).value, "TOTAL")
+        self.assertEqual(float(sheet.cell(row=8, column=12).value), 8000.0)
 
     def test_manual_event_rejects_collaborator_without_link_to_selected_unit(self):
         second_unit = Unit.objects.create(tenant=self.tenant, company=self.company, name="Unidade Secundária")

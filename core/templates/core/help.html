@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}Central de ajuda — Fechamento de Campo{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Suporte</p><h1>Central de ajuda</h1><p class="subtitle">Instruções de uso e regras de negócio do Fechamento de Campo. Em caso de dúvida que não esteja aqui, procure o DP ou a plataforma da sua empresa.</p></div></div>
+
+<section class="area-guidance" aria-label="Como usar esta página">
+  <h2>Como usar esta página</h2>
+  <p>Toque em uma pergunta para abrir a explicação. O que você precisa depende do seu perfil: quem só lança ocorrências no campo usa principalmente o app do líder; quem administra também usa regras, conferência e fechamento.</p>
+</section>
+
+<section class="card help-section">
+  <h2>Primeiros passos</h2>
+  <div class="install-guides">
+    <details class="install-guide"><summary>Sou líder de campo — como lanço uma ocorrência?</summary><ol>
+      <li>Abra o <strong>App do líder</strong> (menu do celular ou <code>/campo/</code>).</li>
+      <li>Escolha o tipo de evento, o colaborador e a data.</li>
+      <li>Envie mesmo sem internet: o lançamento fica guardado no aparelho e sincroniza sozinho quando a conexão voltar.</li>
+      <li>Acompanhe a situação em <strong>Lançamentos</strong>; eventos pendentes aguardam conferência do DP antes de virarem pagamento.</li>
+    </ol></details>
+    <details class="install-guide"><summary>Sou do DP/administração — por onde eu começo?</summary><ol>
+      <li><strong>Pessoas:</strong> pré-admissão e carga cadastral de colaboradores e vínculos.</li>
+      <li><strong>Operação:</strong> acompanhamento do app do líder, lançamentos, calendário e comunicação.</li>
+      <li><strong>Fechamento:</strong> saúde da operação, regras e rubricas, conferência, importação da folha, pagamentos e encerramento da competência.</li>
+      <li><strong>Relatórios:</strong> prévias por unidade/competência e exportação auditada em XLSX e PDF.</li>
+    </ol></details>
+    <details class="install-guide"><summary>Como instalo o app no celular ou no computador?</summary>
+      <ol>
+        <li><strong>Android:</strong> abra esta página no Chrome, toque nos três pontinhos e em "Instalar app" ou "Adicionar à tela inicial".</li>
+        <li><strong>iPhone ou iPad:</strong> abra no Safari, toque em Compartilhar e em "Adicionar à Tela de Início".</li>
+        <li><strong>Computador:</strong> abra no Chrome ou Edge e use o ícone de instalação na barra de endereço, ou o menu do navegador.</li>
+      </ol>
+    </details>
+  </div>
+</section>
+
+<section class="card help-section">
+  <h2>Perfis e acesso</h2>
+  <p class="muted-text">Cada pessoa só enxerga as unidades liberadas para ela. Sem unidade liberada, a conta não recebe dados operacionais.</p>
+  <details class="tool-example"><summary>Quais perfis existem?</summary><p><strong>Líder</strong> lança eventos de campo. <strong>DP</strong> confere, aprova e fecha a competência. <strong>Direção/Financeiro</strong> acompanha custos e pagamentos. <strong>Plataforma</strong> é o acesso administrativo interno da equipe do sistema e pode, quando sem unidade definida, operar todas as unidades do cliente — isso deve ficar restrito à equipe da plataforma.</p></details>
+  <details class="tool-example"><summary>Não encontro uma unidade, colaborador ou tela. O que fazer?</summary><p>Fale com o DP ou com a plataforma para conferir seu acesso em <a href="{% url 'settings_page' %}">Configurações → Meus acessos</a>. Alterar o menu do navegador não libera dados: o backend aplica o mesmo filtro de unidade em todas as telas, incluindo o app do líder e a sincronização offline.</p></details>
+</section>
+
+<section class="card help-section">
+  <h2>Regras de negócio essenciais</h2>
+  <details class="tool-example"><summary>Como funciona o cálculo do salário combinado e do CLT?</summary><p>Cada colaborador tem salário combinado e salário de registro versionados por empresa, unidade e vigência. Uma dispensa por chuva aprovada substitui, só naquele dia, a diária do salário combinado pela diária de registro. O cálculo mensal usa 30 dias fixos ou os dias reais da competência, conforme a configuração de cada empresa, com memória do cálculo guardada para conferência.</p></details>
+  <details class="tool-example"><summary>Qual é o fluxo de uma regra ou rubrica até virar pagamento?</summary><p>Cadastrar → aprovar regra → vincular/aprovar colaborador ou lançar/aprovar evento → gerar rubricas → conferir/aprovar ciclo. Depois de aprovadas, regras e vínculos não têm edição livre; uma mudança de valor exige uma nova vigência, sem sobreposição com a anterior.</p></details>
+  <details class="tool-example"><summary>Posso editar ou apagar um evento já aprovado?</summary><p>Não. Eventos pendentes só podem ser corrigidos no Admin com justificativa e auditoria do valor anterior e do novo. Eventos aprovados e competências fechadas ficam bloqueados para edição, exclusão ou criação direta.</p></details>
+  <details class="tool-example"><summary>A importação da folha (XLSX/PDF) já efetiva pagamento?</summary><p>Não. A importação gera apenas uma prévia de conferência, com validação de CNPJ, competência, colaborador e vínculo. Nenhum pagamento é criado, alterado ou aprovado automaticamente — a conferência humana continua obrigatória antes de qualquer lançamento financeiro.</p></details>
+  <details class="tool-example"><summary>Como funciona a pré-admissão e a conversão em colaborador?</summary><p>DP/direção cria o convite; o candidato preenche um formulário público por um link com validade de 15 dias e envia para conferência. Depois da aprovação, a conversão em colaborador e vínculo exige conferência manual (nome, CPF válido, cargo, data de admissão e justificativa); não existe associação automática por nome nem regularização automática de cadastros antigos.</p></details>
+  <details class="tool-example"><summary>Posso encerrar a competência a qualquer momento?</summary><p>Não. O encerramento verifica pendências antes de liberar: os eventos precisam estar tratados e os ciclos de pagamento aprovados. O encerramento com justificativa não corta pagamentos já gerados nem reabre períodos fechados/aprovados fora da trilha de auditoria.</p></details>
+</section>
+
+<section class="card help-section">
+  <h2>Precisa de mais ajuda?</h2>
+  <p>Fale com o responsável de DP ou com a equipe da plataforma da sua empresa. Eles têm acesso ao histórico de auditoria para investigar qualquer dúvida sobre um lançamento, um cálculo ou um acesso.</p>
+</section>
+{% endblock %}

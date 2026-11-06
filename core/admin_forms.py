@@ -46,6 +46,7 @@ class FieldEventAdminForm(forms.ModelForm):
                 validate_event_application(
                     cleaned["application"], tenant, cleaned["unit"],
                     cleaned["collaborator"], cleaned["event_date"], cleaned["quantity"],
+                    require_leader_available=False, exclude_event_id=self.instance.pk,
                 )
             if self.instance.competency_id and cleaned.get("event_date"):
                 event_date = cleaned["event_date"]

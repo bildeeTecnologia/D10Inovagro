@@ -24,9 +24,10 @@ class FieldEventForm(forms.ModelForm):
             "quantity": forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
         }
 
-    def __init__(self, *args, released_types=None, **kwargs):
+    def __init__(self, *args, released_types=None, require_leader_available=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.released_types = released_types
+        self.require_leader_available = require_leader_available
         self.fields["unit"].empty_label = "Selecione a unidade"
         self.fields["collaborator"].empty_label = "Selecione o colaborador"
         choices = [item for item in FieldEvent.EVENT_CHOICES if released_types is None or item[0] == "rubric" or item[0] in released_types]
@@ -59,7 +60,10 @@ class FieldEventForm(forms.ModelForm):
             elif unit and collaborator and event_date and cleaned.get("quantity") is not None:
                 from .rubric_applications import validate_event_application
                 try:
-                    validate_event_application(application, unit.tenant, unit, collaborator, event_date, cleaned["quantity"])
+                    validate_event_application(
+                        application, unit.tenant, unit, collaborator, event_date, cleaned["quantity"],
+                        require_leader_available=self.require_leader_available,
+                    )
                 except ValidationError as exc:
                     self.add_error("application", exc)
         elif application:

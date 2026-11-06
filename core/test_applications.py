@@ -14,7 +14,7 @@ from .models import (
 )
 from .rubric_applications import (
     application_blockers, approve_agreement, approve_application, end_agreement,
-    end_application, generate_application_entries,
+    end_application, generate_application_entries, validate_event_application,
 )
 from .views import _competency_closing_blockers
 
@@ -203,7 +203,7 @@ class RubricApplicationTests(TestCase):
         self.assertEqual(self.sync(payload).json()["synced"][0]["status"], "already_synced")
         self.assertEqual(FieldEvent.objects.count(), 1)
         self.assertEqual(FieldEvent.objects.get().application, app)
-        self.assertTrue(self.sync(self.payload(app)).json()["conflicts"])
+        self.assertTrue(self.sync(self.payload(app)).json()["errors"])
         another_app = self.application(mode="event", code="OUTRA_OCORRENCIA")
         self.assertEqual(self.sync(self.payload(another_app)).json()["synced"][0]["status"], "created")
         self.assertEqual(FieldEvent.objects.count(), 2)
@@ -247,6 +247,62 @@ class RubricApplicationTests(TestCase):
             response = self.client.post(reverse("event_create"), {**payload, **extra})
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.context["form"].errors)
+
+    def test_office_can_launch_occurrence_not_released_to_leader(self):
+        rubric = Rubric.objects.create(
+            tenant=self.tenant, code="FROTA_RESTRITA", name="Frota restrita", category="earning",
+            cycle_type="day10", effective_from=date(2026, 1, 1), created_by=self.dp,
+        )
+        app = RubricApplication.objects.create(
+            tenant=self.tenant, rubric=rubric, unit=self.unit, mode="event", amount=Decimal("80.00"),
+            cycle_type="day10", leader_available=False, effective_from=date(2026, 1, 1),
+            instructions="Somente o DP lança.", created_by=self.dp,
+        )
+        approve_application(app, self.dp, "Regra homologada em teste")
+        payload = {
+            "unit": self.unit.pk, "collaborator": self.person.pk, "event_type": "rubric",
+            "application": app.pk, "event_date": "2026-10-07", "quantity": "1", "reason": "Tentativa do líder",
+        }
+        self.client.force_login(self.leader)
+        response = self.client.post(reverse("event_create"), payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors)
+        self.assertFalse(FieldEvent.objects.exists())
+
+        self.client.force_login(self.dp)
+        response = self.client.post(reverse("event_create"), {**payload, "reason": "Lançamento administrativo do DP"})
+        self.assertRedirects(response, reverse("dashboard"))
+        self.assertEqual(FieldEvent.objects.get().application, app)
+
+    def test_event_mode_allows_only_one_occurrence_per_competency(self):
+        app = self.application(mode="event", code="FROTA_UNICA")
+        first = FieldEvent.objects.create(
+            tenant=self.tenant, competency=self.competency, unit=self.unit, collaborator=self.person,
+            event_type="rubric", application=app, event_date=date(2026, 10, 5), quantity=1,
+            reason="Responsabilidade de frota", status="approved", idempotency_key=uuid.uuid4(),
+            created_by=self.dp, approved_by=self.dp,
+        )
+        with self.assertRaisesMessage(ValidationError, "já foi lançada"):
+            validate_event_application(app, self.tenant, self.unit, self.person, date(2026, 10, 20), Decimal("1"))
+        first.status = "rejected"
+        first.save(update_fields=["status"])
+        validate_event_application(app, self.tenant, self.unit, self.person, date(2026, 10, 20), Decimal("1"))
+
+    def test_duplicate_block_is_scoped_to_the_same_bonus_only(self):
+        """Impedir duplicidade da regra X não pode bloquear o colaborador de receber a regra Y na mesma competência."""
+        frota = self.application(mode="event", code="FROTA_ISOLADA")
+        meta = self.application(mode="cumulative", code="META_ISOLADA")
+        FieldEvent.objects.create(
+            tenant=self.tenant, competency=self.competency, unit=self.unit, collaborator=self.person,
+            event_type="rubric", application=frota, event_date=date(2026, 10, 5), quantity=1,
+            reason="Responsabilidade de frota", status="approved", idempotency_key=uuid.uuid4(),
+            created_by=self.dp, approved_by=self.dp,
+        )
+        # A regra de frota já lançada neste mês não impede o lançamento de outra bonificação (meta) para a mesma pessoa.
+        validate_event_application(
+            meta, self.tenant, self.unit, self.person, date(2026, 10, 20), Decimal("1"),
+            require_leader_available=False,
+        )
 
     def test_rule_form_approval_and_scope_protect_forged_requests(self):
         rubric = Rubric.objects.create(

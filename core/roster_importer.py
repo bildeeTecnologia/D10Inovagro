@@ -62,6 +62,12 @@ def cpf_fingerprint(value):
     return hmac.new(key, b"agro-collaborator-cpf-v1:" + cpf.encode("ascii"), hashlib.sha256).hexdigest()
 
 
+def mask_cpf(value):
+    """Mantém só os 3 últimos dígitos visíveis; o CPF completo nunca é persistido."""
+    cpf = digits(value).zfill(11)
+    return f"***.***.**{cpf[8]}-{cpf[9:11]}"
+
+
 def parse_date(value, required=False):
     if value in (None, ""):
         if required:
@@ -90,7 +96,7 @@ def create_roster_template():
     sheet.append(["INSTRUÇÕES"])
     instructions = [
         "Uma linha por vínculo pessoa–empresa–unidade. Para a mesma pessoa em duas unidades, repita o CPF em duas linhas, uma por vínculo.",
-        "CPF é usado somente para reconhecer a mesma pessoa. O sistema guarda uma impressão digital protegida, não o CPF aberto nem a forma mascarada.",
+        "CPF é usado somente para reconhecer a mesma pessoa. O sistema guarda uma impressão digital protegida e uma versão mascarada com só os 3 últimos dígitos; o CPF completo nunca é armazenado.",
         "Matrícula pertence ao vínculo e pode ser diferente entre empresas/unidades. Se não existir, deixe em branco; não use o número sequencial da linha.",
         "CNPJ deve corresponder ao cadastro da empresa no sistema; a unidade é cadastrada dentro dessa empresa.",
         "Data de admissão é obrigatória; data de desligamento é opcional. Não preencha salário, CPF de dependentes, dados bancários ou descontos neste arquivo.",
@@ -236,6 +242,7 @@ def prepare_roster_import(file_obj, tenant):
             "row": row_number,
             "source_rows": [row_number],
             "cpf_fingerprint": fingerprint,
+            "cpf_masked": mask_cpf(cpf_digits),
             "name": name,
             "name_variants": [],
             "company_id": company.pk,
@@ -312,6 +319,7 @@ def apply_roster_import(batch, user):
                     name=item["name"],
                     employee_code="",
                     cpf_fingerprint=item["cpf_fingerprint"],
+                    cpf_masked=item.get("cpf_masked", ""),
                     active=True,
                 )
                 created_people += 1

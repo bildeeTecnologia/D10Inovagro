@@ -36,7 +36,10 @@ def scan_tenant(tenant, units):
         if event.status in {"pending", "approved"} and event.event_type == "rubric":
             from .rubric_applications import validate_event_application
             try:
-                validate_event_application(event.application, tenant, event.unit, event.collaborator, event.event_date, event.quantity)
+                validate_event_application(
+                    event.application, tenant, event.unit, event.collaborator, event.event_date, event.quantity,
+                    require_leader_available=False, exclude_event_id=event.pk,
+                )
             except ValidationError as exc:
                 issue(fingerprint=f"rule:{event.id}", issue_type="missing_rule", severity="critical", title="Regra de rubrica indisponível", description=" ".join(exc.messages), event=event, unit=event.unit, competency=event.competency)
         elif event.status in {"pending", "approved"} and event.event_type not in {"occurrence", "advance"} and not CalculationRule.objects.filter(tenant=tenant, event_type=event.event_type, status="published", effective_from__lte=event.event_date).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=event.event_date)).filter(Q(unit=event.unit) | Q(unit__isnull=True)).exists():

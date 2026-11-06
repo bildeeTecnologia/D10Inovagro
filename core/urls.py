@@ -7,6 +7,7 @@ from .realtime_auth import conference_realtime_token
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("ajuda/", views.help_center, name="help_center"),
     path("areas/<slug:area_slug>/", views.workspace_area, name="workspace_area"),
     path("lancamentos/novo/", views.event_create, name="event_create"),
     path("lancamentos/", views.event_list, name="event_list"),

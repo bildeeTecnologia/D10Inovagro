@@ -20,7 +20,7 @@ from .forms import FieldEventForm
 from .calculation import calculate_event
 from .communication_forms import CommunicationMessageForm, CommunicationThreadForm
 from .models import AdmissionFieldDefinition, AdmissionFieldValue, AdmissionRequest, AuditLog, CalculationResult, CalculationRule, CommunicationMessage, CommunicationThread, Competency, FieldEvent, MonthlyCompensationResult, Notification, PaymentCycle, PaymentEntry, ReportEmission, Tenant
-from .reporting import build_report_data, create_pdf, create_xlsx, response_file
+from .reporting import build_report_data, create_pdf, create_xlsx, legacy_monthly_header, response_file
 from .quality import health_summary
 from .compensation import calculate_monthly_compensation
 from .payments import generate_monthly_entries
@@ -37,11 +37,16 @@ from django.http import FileResponse, Http404
 from .models import Rubric
 from .rubric_forms import RubricForm
 from .competency_forms import CompetencyForm
-from .rubric_applications import available_applications
+from .rubric_applications import available_applications, available_applications_for_office
 from .access import capability_required, navigation_access, tenant_for_user as _tenant_for_user, user_access, user_roles, user_scopes
 from .event_releases import fixed_event_types, leader_event_cards, released_event_types
 from .navigation import AREAS, available_tools
 from .event_cost_dashboard import build_event_cost_dashboard
+
+
+@login_required
+def help_center(request):
+    return render(request, "core/help.html", {})
 
 
 @login_required
@@ -122,10 +127,17 @@ def event_create(request):
     if not tenant:
         messages.error(request, "Configure um cliente antes de lançar eventos.")
         return redirect("dashboard")
+    is_leader_only = user_access(request.user, tenant)["leader_only"]
     if request.method == "POST":
-        form = FieldEventForm(request.POST, released_types=_released_types_for(request.user, tenant))
+        form = FieldEventForm(
+            request.POST, released_types=_released_types_for(request.user, tenant),
+            require_leader_available=is_leader_only,
+        )
         allowed_units = _allowed_units_for_user(request.user, tenant)
-        form.fields["application"].queryset = available_applications(tenant, allowed_units)
+        form.fields["application"].queryset = (
+            available_applications(tenant, allowed_units) if is_leader_only
+            else available_applications_for_office(tenant, allowed_units)
+        )
         form.fields["unit"].queryset = allowed_units
         selected_unit_id = request.POST.get("unit")
         collaborator_links = tenant.collaborators.filter(active=True, links__unit__in=allowed_units)
@@ -176,9 +188,15 @@ def event_create(request):
                 messages.success(request, message)
                 return redirect("field_app" if navigation_access(request)["platform_access"]["leader_only"] else "dashboard")
     else:
-        form = FieldEventForm(released_types=_released_types_for(request.user, tenant))
+        form = FieldEventForm(
+            released_types=_released_types_for(request.user, tenant),
+            require_leader_available=is_leader_only,
+        )
         allowed_units = _allowed_units_for_user(request.user, tenant)
-        form.fields["application"].queryset = available_applications(tenant, allowed_units)
+        form.fields["application"].queryset = (
+            available_applications(tenant, allowed_units) if is_leader_only
+            else available_applications_for_office(tenant, allowed_units)
+        )
         form.fields["unit"].queryset = allowed_units
         form.fields["collaborator"].queryset = tenant.collaborators.filter(active=True, links__unit__in=allowed_units).distinct()
     return render(request, "core/event_form.html", {"form": form, "tenant": tenant})
@@ -813,6 +831,8 @@ def reports(request):
         "status_choices": FieldEvent.STATUS_CHOICES,
         "cost_status_choices": EVENT_COST_STATUS_CHOICES,
     }
+    if report_type == "monthly":
+        context["monthly_header"] = legacy_monthly_header(rows)
     if cost_data:
         context.update(cost_data)
         context["units"] = cost_data["units_for_filter"]

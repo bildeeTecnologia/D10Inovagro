@@ -187,9 +187,12 @@
       <tbody>{% for row in rows %}<tr><td>{{ row.competencia }}</td><td>{{ row.unidade }}</td><td>{{ row.colaborador }}</td><td>{{ row.tipo }}</td><td>{{ row.data }}</td><td>{{ row.quantidade }}</td><td>{{ row.status }}</td></tr>{% empty %}<tr><td colspan="7" class="empty">Nenhum evento encontrado.</td></tr>{% endfor %}</tbody>
     </table></div>
   {% elif report_type == 'monthly' %}
+    <div class="notice-box report-explanation">
+      <p><strong>EMPRESA:</strong> {{ monthly_header.empresa }} &nbsp;·&nbsp; <strong>CNPJ Nº:</strong> {{ monthly_header.cnpj }} &nbsp;·&nbsp; <strong>COMPETÊNCIA:</strong> {{ monthly_header.competencia }}</p>
+    </div>
     <div class="table-scroll"><table>
-      <thead><tr><th>Competência</th><th>Colaborador</th><th>Unidade</th><th>Dias normais</th><th>Dias chuva</th><th>Valor normal</th><th>Valor chuva</th><th>Total</th></tr></thead>
-      <tbody>{% for row in rows %}<tr><td>{{ row.competencia }}</td><td>{{ row.colaborador }}</td><td>{{ row.unidade }}</td><td>{{ row.dias_normais }}</td><td>{{ row.dias_chuva }}</td><td>R$ {{ row.normal|floatformat:2 }}</td><td>R$ {{ row.chuva|floatformat:2 }}</td><td><strong>R$ {{ row.total|floatformat:2 }}</strong></td></tr>{% empty %}<tr><td colspan="8" class="empty">Nenhuma composição mensal calculada.</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>n</th><th>Colaborador</th><th>Empresa</th><th>Admissão</th><th>Função</th><th>CPF</th><th>Unidade</th><th>Dias normais</th><th>Dias chuva</th><th>Valor normal</th><th>Valor chuva</th><th>Total</th></tr></thead>
+      <tbody>{% for row in rows %}<tr><td>{{ forloop.counter }}</td><td>{{ row.colaborador }}</td><td>{{ row.empresa }}</td><td>{{ row.admissao }}</td><td>{{ row.funcao }}</td><td>{{ row.cpf }}</td><td>{{ row.unidade }}</td><td>{{ row.dias_normais }}</td><td>{{ row.dias_chuva }}</td><td>R$ {{ row.normal|floatformat:2 }}</td><td>R$ {{ row.chuva|floatformat:2 }}</td><td><strong>R$ {{ row.total|floatformat:2 }}</strong></td></tr>{% empty %}<tr><td colspan="12" class="empty">Nenhuma composição mensal calculada.</td></tr>{% endfor %}</tbody>
     </table></div>
   {% else %}
     <div class="table-scroll"><table>

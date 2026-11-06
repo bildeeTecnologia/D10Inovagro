@@ -11,6 +11,11 @@ from .models import (
 )
 
 
+def _format_decimal(value):
+    """Remove zeros à direita de uma quantidade sem recorrer à notação científica (ex.: 3.00 -> "3")."""
+    return f"{value.normalize():f}"
+
+
 def period(competency):
     return (
         date(competency.year, competency.month, 1),
@@ -31,20 +36,44 @@ def available_applications(tenant, units):
     ).select_related("rubric", "unit")
 
 
-def validate_event_application(application, tenant, unit, collaborator, event_date, quantity):
+def available_applications_for_office(tenant, units):
+    """Regras aprovadas visíveis ao DP, inclusive as não liberadas ao app do líder.
+
+    `leader_available` só controla a vitrine do líder; o DP sempre pode lançar
+    diretamente qualquer regra aprovada da unidade.
+    """
+    return RubricApplication.objects.filter(
+        tenant=tenant, unit__in=units, status="approved",
+        rubric__active=True, mode__in=["event", "cumulative"],
+    ).select_related("rubric", "unit")
+
+
+def validate_event_application(
+    application, tenant, unit, collaborator, event_date, quantity,
+    *, require_leader_available=True, exclude_event_id=None,
+):
     if (
         application.tenant_id != tenant.pk or application.unit_id != unit.pk
         or collaborator.tenant_id != tenant.pk
         or application.status != "approved" or application.mode not in {"event", "cumulative"}
-        or not application.leader_available or not application.rubric.active
+        or (require_leader_available and not application.leader_available) or not application.rubric.active
     ):
         raise ValidationError("Regra indisponível para lançamento nesta unidade.")
     if event_date < application.effective_from or (application.effective_to and event_date > application.effective_to):
         raise ValidationError("A regra não está vigente na data do evento.")
     if not collaborator.active or not unit.active:
         raise ValidationError("Unidade ou colaborador inativo para lançamento.")
-    if application.mode == "event" and quantity != 1:
-        raise ValidationError("Evento de valor fixo aceita somente uma ocorrência por lançamento.")
+    if application.mode == "event":
+        if quantity != 1:
+            raise ValidationError("Evento de valor fixo aceita somente uma ocorrência por lançamento.")
+        duplicates = FieldEvent.objects.filter(
+            tenant=tenant, application=application, collaborator=collaborator, unit=unit,
+            event_date__year=event_date.year, event_date__month=event_date.month,
+        ).exclude(status="rejected")
+        if exclude_event_id:
+            duplicates = duplicates.exclude(pk=exclude_event_id)
+        if duplicates.exists():
+            raise ValidationError("Esta bonificação já foi lançada para este colaborador nesta competência.")
     if application.mode == "cumulative" and quantity <= 0:
         raise ValidationError("Bonificação cumulativa exige quantidade positiva.")
     if not EmploymentLink.objects.filter(
@@ -186,7 +215,10 @@ def application_sources(competency):
         try:
             if (event.event_date.year, event.event_date.month) != (competency.year, competency.month):
                 raise ValidationError("A data do evento não pertence à competência de trabalho.")
-            validate_event_application(event.application, competency.tenant, event.unit, event.collaborator, event.event_date, event.quantity)
+            validate_event_application(
+                event.application, competency.tenant, event.unit, event.collaborator, event.event_date, event.quantity,
+                require_leader_available=False, exclude_event_id=event.pk,
+            )
         except ValidationError as exc:
             errors.append(f"Evento #{event.pk}: {' '.join(exc.messages)}")
         else:
@@ -276,7 +308,7 @@ def generate_application_entries(competency, user):
                 "memory": {
                     "source": "rubric_application", "application_id": app.pk,
                     "event_ids": [event.pk for event in events],
-                    "mode": app.mode, "unit_amount": str(app.amount), "quantity": str(total_quantity),
+                    "mode": app.mode, "unit_amount": str(app.amount), "quantity": _format_decimal(total_quantity),
                     "fixed_amount": str(total_amount),
                     "competency": f"{competency.month:02d}/{competency.year}",
                     "payment_cycle": app.cycle_type, "proration": "not_supported",

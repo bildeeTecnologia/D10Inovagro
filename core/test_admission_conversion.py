@@ -74,7 +74,7 @@ class AdmissionConversionTests(TestCase):
         self.assertEqual(link.job_title, "Auxiliar")
         self.assertEqual(link.admission_date, date(2026, 11, 1))
         self.assertEqual(link.collaborator.cpf_fingerprint, cpf_fingerprint("52998224725"))
-        self.assertEqual(link.collaborator.cpf_masked, "***.***.***-**")
+        self.assertEqual(link.collaborator.cpf_masked, "***.***.**7-25")
         self.assertEqual(self.admission.converted_by, self.user)
         self.assertIsNotNone(self.admission.converted_at)
         self.assertEqual(self.admission.status, "approved")

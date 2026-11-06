@@ -3,7 +3,7 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from .models import AdmissionRequest, AuditLog, Collaborator, EmploymentLink
-from .roster_importer import cpf_fingerprint, normalize_text
+from .roster_importer import cpf_fingerprint, mask_cpf, normalize_text
 
 
 def can_convert_admission(user, admission):
@@ -47,7 +47,7 @@ def convert_admission(*, admission_id, user, data):
             raise ValidationError("Há um cadastro com este nome sem CPF identificado. Regularize a identidade antes de converter.")
         person, created = Collaborator.objects.get_or_create(
             tenant=admission.tenant, cpf_fingerprint=fingerprint,
-            defaults={"name": data["full_name"], "cpf_masked": "***.***.***-**"},
+            defaults={"name": data["full_name"], "cpf_masked": mask_cpf(data["cpf"])},
         )
         person = Collaborator.objects.select_for_update().get(pk=person.pk)
     else:

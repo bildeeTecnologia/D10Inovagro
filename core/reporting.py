@@ -3,14 +3,15 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.http import HttpResponse
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-from .models import FieldEvent
+from .models import EmploymentLink, FieldEvent
 
 
 def money(value):
@@ -25,7 +26,30 @@ def _event_label(event_type, rubric_name=""):
 
 def build_report_data(queryset, report_type):
     if report_type == "monthly":
-        rows = [{"competencia": f"{r.competency.month:02d}/{r.competency.year}", "colaborador": r.collaborator.name, "unidade": r.unit.name, "dias_normais": r.normal_days, "dias_chuva": r.rain_days, "normal": r.normal_amount, "chuva": r.rain_amount, "total": r.total_amount} for r in queryset.select_related("competency", "collaborator", "unit")]
+        results = list(queryset.select_related("competency", "collaborator", "unit", "unit__company"))
+        collaborator_ids = {r.collaborator_id for r in results}
+        unit_ids = {r.unit_id for r in results}
+        links = {}
+        if collaborator_ids:
+            for link in EmploymentLink.objects.filter(
+                collaborator_id__in=collaborator_ids, unit_id__in=unit_ids,
+            ).order_by("admission_date"):
+                links[(link.collaborator_id, link.unit_id)] = link
+        rows = []
+        for r in results:
+            link = links.get((r.collaborator_id, r.unit_id))
+            rows.append({
+                "competencia": f"{r.competency.month:02d}/{r.competency.year}",
+                "colaborador": r.collaborator.name,
+                "empresa": r.unit.company.legal_name,
+                "cnpj": r.unit.company.cnpj,
+                "admissao": link.admission_date.strftime("%d/%m/%Y") if link else "",
+                "funcao": link.job_title if link else "",
+                "cpf": r.collaborator.cpf_masked or "***.***.***-**",
+                "unidade": r.unit.name,
+                "dias_normais": r.normal_days, "dias_chuva": r.rain_days,
+                "normal": r.normal_amount, "chuva": r.rain_amount, "total": r.total_amount,
+            })
         return rows, []
     if report_type == "events":
         rows = [{"competencia": f"{e.competency.month:02d}/{e.competency.year}", "unidade": e.unit.name, "colaborador": e.collaborator.name, "tipo": e.get_event_type_display(), "data": e.event_date.strftime("%d/%m/%Y"), "quantidade": float(e.quantity), "status": e.get_status_display(), "motivo": e.reason} for e in queryset.select_related("unit", "collaborator", "competency")]
@@ -52,7 +76,107 @@ def build_report_data(queryset, report_type):
     return rows, []
 
 
+def legacy_monthly_header(rows):
+    """Texto do bloco Empresa/CNPJ/Competência compartilhado entre a tela e o XLSX."""
+    companies = {(row["empresa"], row.get("cnpj", "")) for row in rows}
+    competencies = {row["competencia"] for row in rows}
+    if len(companies) == 1:
+        empresa_text, cnpj_text = next(iter(companies))
+    else:
+        empresa_text = f"{len(companies)} empresas (ver coluna Empresa)" if companies else "—"
+        cnpj_text = "—"
+    competencia_text = next(iter(competencies)) if len(competencies) == 1 else (", ".join(sorted(competencies)) if competencies else "—")
+    return {"empresa": empresa_text, "cnpj": cnpj_text, "competencia": competencia_text}
+
+
+def create_legacy_monthly_xlsx(rows, metadata):
+    """Mesmo molde visual das planilhas de referência do cliente (Pjt_Models/COMBINADO, Liquido):
+
+    bloco de cabeçalho institucional (Empresa/CNPJ/Competência), cabeçalho de colunas em
+    negrito sem preenchimento colorido e linha de total ao final.
+    """
+    columns = [
+        ("n", "n", 6),
+        ("colaborador", "Colaborador", 42),
+        ("empresa", "Empresa", 34),
+        ("admissao", "Admissão", 14),
+        ("funcao", "Função", 22),
+        ("cpf", "CPF", 16),
+        ("unidade", "Unidade", 20),
+        ("dias_normais", "Dias normais", 12),
+        ("dias_chuva", "Dias chuva", 12),
+        ("normal", "Valor normal", 16),
+        ("chuva", "Valor chuva", 16),
+        ("total", "Total", 16),
+    ]
+    money_keys = {"normal", "chuva", "total"}
+    last_col = len(columns)
+    last_col_letter = get_column_letter(last_col)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Composição Mensal"
+
+    title_font = Font(name="Arial", size=14, bold=True)
+    header_block_font = Font(name="Arial", size=11, bold=True)
+    column_header_font = Font(name="Arial", size=11, bold=True)
+    bottom_border = Border(bottom=Side(style="thin"))
+
+    ws.merge_cells(f"A1:{last_col_letter}1")
+    ws["A1"] = metadata["title"]
+    ws["A1"].font = title_font
+    ws["A1"].alignment = Alignment(horizontal="center")
+
+    header = legacy_monthly_header(rows)
+    empresa_text, cnpj_text, competencia_text = header["empresa"], header["cnpj"], header["competencia"]
+
+    for row_index, label, value in (
+        (2, "EMPRESA:", empresa_text),
+        (3, "CNPJ Nº", cnpj_text),
+        (4, "COMPETÊNCIA:", competencia_text),
+    ):
+        ws.merge_cells(f"A{row_index}:{last_col_letter}{row_index}")
+        cell = ws[f"A{row_index}"]
+        cell.value = f"{label} {value}"
+        cell.font = header_block_font
+
+    header_row = 5
+    for col_index, (key, label, width) in enumerate(columns, start=1):
+        cell = ws.cell(row=header_row, column=col_index, value=label)
+        cell.font = column_header_font
+        cell.border = bottom_border
+        ws.column_dimensions[get_column_letter(col_index)].width = width
+
+    data_start = header_row + 1
+    for offset, row in enumerate(rows):
+        excel_row = data_start + offset
+        values = [
+            offset + 1, row["colaborador"], row["empresa"], row["admissao"], row["funcao"],
+            row["cpf"], row["unidade"], row["dias_normais"], row["dias_chuva"],
+            row["normal"], row["chuva"], row["total"],
+        ]
+        for col_index, value in enumerate(values, start=1):
+            cell = ws.cell(row=excel_row, column=col_index, value=value)
+            if columns[col_index - 1][0] in money_keys:
+                cell.number_format = "R$ #,##0.00"
+
+    total_row = data_start + len(rows)
+    ws.merge_cells(f"A{total_row}:{get_column_letter(last_col - 1)}{total_row}")
+    total_label = ws.cell(row=total_row, column=1, value="TOTAL")
+    total_label.font = Font(name="Arial", size=11, bold=True)
+    total_value = ws.cell(row=total_row, column=last_col, value=sum((row["total"] for row in rows), Decimal("0.00")))
+    total_value.font = Font(name="Arial", size=11, bold=True)
+    total_value.number_format = "R$ #,##0.00"
+
+    ws.freeze_panes = f"A{data_start}"
+    output = BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+
 def create_xlsx(report_type, rows, inconsistencies, metadata):
+    if report_type == "monthly":
+        return create_legacy_monthly_xlsx(rows, metadata)
     wb = Workbook()
     summary = wb.active
     summary.title = "Resumo"
