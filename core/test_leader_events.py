@@ -34,7 +34,10 @@ class LeaderEventReleaseTests(TestCase):
             "collaborator_id": self.person.id, "event_type": event_type, "event_date": "2026-10-10",
             "quantity": "1", "reason": "Lançamento de teste",
         }]}
-        return self.client.post("/api/v1/events/sync/", json.dumps(payload), content_type="application/json").json()
+        return self.client.post(
+            "/api/v1/events/sync/", json.dumps(payload), content_type="application/json",
+            HTTP_X_D10_ACCOUNT=str(self.leader.pk),
+        ).json()
 
     def test_field_app_shows_only_released_fixed_events(self):
         EventTypeSetting.objects.create(tenant=self.tenant, event_type="holiday", leader_available=False)

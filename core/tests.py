@@ -32,6 +32,7 @@ class FieldBackendTests(TestCase):
         self.user = User.objects.create_user(username="leader", password="secret123")
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=self.unit_allowed, role="leader")
         self.client.login(username="leader", password="secret123")
+        self.client.defaults["HTTP_X_D10_ACCOUNT"] = str(self.user.pk)
 
     def test_unit_rejects_company_from_another_tenant(self):
         other_tenant = Tenant.objects.create(name="Outro cliente", slug="outro-cliente-unidade")
@@ -162,6 +163,22 @@ class FieldBackendTests(TestCase):
         self.assertContains(response, "Computador")
         self.assertContains(response, "Antes de ir para o campo")
         self.assertContains(response, 'name="apple-mobile-web-app-title" content="D10 Agro"')
+
+    def test_field_app_preloads_default_unit_and_offline_catalog(self):
+        second_unit = Unit.objects.create(tenant=self.tenant, company=self.company, name="Unidade Offline 2")
+        UserScope.objects.create(user=self.user, tenant=self.tenant, unit=second_unit, role="leader")
+
+        response = self.client.get("/campo/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["unit"], self.unit_allowed)
+        self.assertContains(response, 'window.FIELD_APP_CONFIG=')
+        self.assertContains(response, f'userId:{self.user.pk}')
+        self.assertContains(response, f'tenantId:{self.tenant.pk}')
+        self.assertContains(response, 'requestedUnitId:""')
+        self.assertContains(response, "units")
+        self.assertContains(response, "Pessoa Permitida")
+        self.assertContains(response, "Unidade Offline 2")
 
     def test_field_app_explains_when_leader_has_no_unit_scope(self):
         self.user.scopes.filter(tenant=self.tenant).delete()
@@ -607,6 +624,19 @@ class FieldBackendTests(TestCase):
         self.assertEqual(second.json()["synced"][0]["status"], "already_synced")
         self.assertEqual(FieldEvent.objects.filter(idempotency_key=key).count(), 1)
 
+    def test_sync_rejects_stale_page_after_session_switch(self):
+        other_user = User.objects.create_user(username="other-leader", password="secret456")
+        UserScope.objects.create(user=other_user, tenant=self.tenant, unit=self.unit_allowed, role="leader")
+        self.client.force_login(other_user)
+        key = str(uuid.uuid4())
+        payload = {"events": [{"client_id": "stale-account-item", "idempotency_key": key, "unit_id": self.unit_allowed.id, "collaborator_id": self.person_allowed.id, "event_type": "daily", "event_date": "2026-10-20", "quantity": "1", "reason": "Evento de conta anterior"}]}
+
+        response = self.client.post("/api/v1/events/sync/", data=json.dumps(payload), content_type="application/json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("conta desta tela mudou", response.json()["error"])
+        self.assertFalse(FieldEvent.objects.filter(idempotency_key=key).exists())
+
     def test_sync_rejects_unit_outside_scope(self):
         payload = {"events": [{"client_id": "client-2", "idempotency_key": str(uuid.uuid4()), "unit_id": self.unit_blocked.id, "collaborator_id": self.person_blocked.id, "event_type": "daily", "event_date": "2026-10-20", "quantity": "1", "reason": "Tentativa indevida"}]}
         response = self.client.post("/api/v1/events/sync/", data=json.dumps(payload), content_type="application/json")
@@ -981,7 +1011,7 @@ class FieldBackendTests(TestCase):
         self.assertIn("event_date", response.context["form"].errors)
         self.assertEqual(FieldEvent.objects.count(), 0)
 
-    def test_field_app_requires_unit_selection_for_multi_unit_user(self):
+    def test_field_app_preselects_first_unit_for_multi_unit_user(self):
         second_unit = Unit.objects.create(tenant=self.tenant, company=self.company, name="Unidade Secundária")
         EmploymentLink.objects.create(collaborator=self.person_allowed, company=self.company, unit=second_unit, job_title="Auxiliar", admission_date=date(2026, 1, 1))
         UserScope.objects.create(user=self.user, tenant=self.tenant, unit=second_unit, role="leader")
@@ -990,10 +1020,12 @@ class FieldBackendTests(TestCase):
         selected_response = self.client.get(f"/campo/?unit={second_unit.id}")
 
         self.assertEqual(empty_response.status_code, 200)
-        self.assertContains(empty_response, "Selecione uma unidade para iniciar")
-        self.assertContains(empty_response, 'unitId:""')
+        self.assertContains(empty_response, "Unidade Permitida")
+        self.assertContains(empty_response, f'unitId:"{self.unit_allowed.id}"')
+        self.assertContains(empty_response, 'requestedUnitId:""')
         self.assertContains(selected_response, "Unidade Secundária")
         self.assertContains(selected_response, f'unitId:"{second_unit.id}"')
+        self.assertContains(selected_response, f'requestedUnitId:"{second_unit.id}"')
         self.assertContains(selected_response, "Pessoa Permitida")
         self.assertNotContains(selected_response, "Pessoa Bloqueada")
 

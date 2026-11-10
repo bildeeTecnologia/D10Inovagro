@@ -1,4 +1,5 @@
 import hashlib
+import json
 import secrets
 import uuid
 from datetime import timedelta
@@ -215,16 +216,33 @@ def event_list(request):
 @capability_required("field")
 def field_app(request):
     tenant = _tenant_for_user(request.user)
-    allowed_units = _allowed_units_for_user(request.user, tenant)
+    allowed_units = _allowed_units_for_user(request.user, tenant).order_by("id")
     requested_unit = request.GET.get("unit", "")
     try:
         requested_unit_id = int(requested_unit)
     except (TypeError, ValueError):
         requested_unit_id = None
     unit = allowed_units.filter(id=requested_unit_id).first() if tenant and requested_unit_id else None
-    if tenant and not request.GET.get("unit") and allowed_units.count() == 1:
+    if tenant and not request.GET.get("unit"):
         unit = allowed_units.first()
     collaborators = tenant.collaborators.filter(active=True, links__unit=unit).distinct() if tenant and unit else []
+    event_cards = leader_event_cards(tenant) if tenant else []
+    rubric_applications = available_applications(tenant, allowed_units) if tenant else []
+    offline_catalog = {
+        "units": [
+            {"id": item.id, "name": item.name, "company": item.company.legal_name, "company_id": item.company_id}
+            for item in allowed_units.select_related("company")
+        ],
+        "collaborators": [
+            {"id": person.id, "name": person.name, "employee_code": person.employee_code or "", "unit_ids": list(person.links.filter(unit__in=allowed_units).values_list("unit_id", flat=True))}
+            for person in tenant.collaborators.filter(active=True, links__unit__in=allowed_units).distinct()
+        ] if tenant else [],
+        "event_cards": event_cards,
+        "rubric_applications": [
+            {"id": app.pk, "unit_id": app.unit_id, "label": app.rubric.name, "instructions": app.instructions or "", "mode": app.mode}
+            for app in rubric_applications
+        ],
+    }
     return render(
         request,
         "core/field_app.html",
@@ -233,8 +251,12 @@ def field_app(request):
             "units": allowed_units,
             "unit": unit,
             "collaborators": collaborators,
-            "event_cards": leader_event_cards(tenant) if tenant else [],
-            "rubric_applications": available_applications(tenant, [unit]) if tenant and unit else [],
+            "event_cards": event_cards,
+            "rubric_applications": rubric_applications.filter(unit=unit) if tenant and unit else [],
+            "offline_catalog_json": json.dumps(offline_catalog, ensure_ascii=False),
+            "storage_user_id": request.user.pk,
+            "storage_tenant_id": tenant.pk if tenant else None,
+            "requested_unit_id": unit.pk if request.GET.get("unit") and unit else "",
         },
     )
 

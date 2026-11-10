@@ -85,7 +85,10 @@ class RubricApplicationTests(TestCase):
         }
 
     def sync(self, payload):
-        return self.client.post(reverse("sync_events"), json.dumps({"events": [payload]}), content_type="application/json")
+        return self.client.post(
+            reverse("sync_events"), json.dumps({"events": [payload]}),
+            content_type="application/json", HTTP_X_D10_ACCOUNT=str(self.leader.pk),
+        )
 
     def test_recurring_without_events_is_idempotent_and_next_month_day10(self):
         agreement = self.agreement(self.application())

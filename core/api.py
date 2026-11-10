@@ -19,6 +19,12 @@ from .views import _allowed_units_for_user, _audit, _invalidate_approved_payment
 @login_required
 @require_POST
 def sync_events(request):
+    page_user_id = request.headers.get("X-D10-Account")
+    if page_user_id != str(request.user.pk):
+        return JsonResponse(
+            {"error": "A conta desta tela mudou. Recarregue o app conectado e tente novamente; os itens continuam guardados neste aparelho."},
+            status=409,
+        )
     tenant = _tenant_for_user(request.user)
     if not tenant:
         return JsonResponse({"error": "Usuário sem escopo de cliente."}, status=403)
